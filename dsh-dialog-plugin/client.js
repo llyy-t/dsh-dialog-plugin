@@ -62,6 +62,9 @@ window.__ModuleLoader__.load({
         panelOpen: '旁路讨论',
         panelToggleHint: '在右侧栏继续这条支线。',
         panelToggleHintBusy: '主对话正在跑，旁路讨论可以同时开一条支线。',
+        panelBriefNote: '快捷模式：直接给结论，不铺陈。',
+        panelBrief:
+          '这是主对话旁边的一条支线，用途是快速对齐一个具体问题。回答要求：先给结论，再给一句依据；不要复述前面对话、不要列计划或待办、不要客套和总结收尾；能一句话说清就不写第二句；引用代码或命令只贴相关片段。拿不准就直接说不确定，并给出最可能的答案。',
         panelForkFailed: '没能从当前对话分叉：{reason}',
         panelNeedSession: '还没有打开会话。',
         panelWaitTurn: '主对话这一轮还没跑完。等它结束后再点重试，支线才能从已完成的地方分叉。',
@@ -106,6 +109,9 @@ window.__ModuleLoader__.load({
         panelNeedSession: 'No session is open.',
         panelToggleHint: 'Continue this branch in the right sidebar.',
         panelToggleHintBusy: 'The main conversation is running; a side discussion can branch off alongside it.',
+        panelBriefNote: 'Quick mode: answer straight, no preamble.',
+        panelBrief:
+          'This is a side branch next to the main conversation, for settling one specific question quickly. Answer style: lead with the conclusion, then one line of support; do not recap the earlier conversation, do not write plans or todo lists, do not add pleasantries or closing summaries; if one sentence settles it, stop there; quote only the relevant fragment of code or command. When unsure, say so plainly and still give the most likely answer.',
         panelWaitTurn: 'The main conversation has not finished a turn yet. Retry once it has, so the branch can fork from a completed point.',
         panelRetry: 'Retry',
         activityThinking: 'Thinking…',
@@ -297,6 +303,29 @@ window.__ModuleLoader__.load({
     }
 
     //#endregion
+
+    /**
+     * Wrap one discussion line in the branch's answering style.
+     *
+     * A branch exists to settle a disagreement quickly, and nothing in the
+     * prompt protocol can carry a style flag: `PromptContentPart` is text,
+     * image, or file only, and a fork inherits the parent's own system prompt.
+     * The only channel that reaches the branch's model is therefore the text
+     * itself, so each line carries this short brief ahead of what the person
+     * typed. It rides along every time rather than once at fork time, because
+     * the branch answers several questions in a row and each answer is its own
+     * request.
+     *
+     * The wording lives in the dictionaries next to the rest of the UI copy, so
+     * nothing else has to know about the protocol gap.
+     *
+     * @param language - active language tag.
+     * @param body - what the person typed.
+     * @returns the text actually delivered to the branch.
+     */
+    function briefBody(language, body) {
+      return `${text(language, 'panelBrief')}\n\n${body}`
+    }
 
     //#region Activity — a live one-line summary of what the assistant is doing
 
@@ -800,22 +829,23 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
 .dsh-dialog-dialog{display:flex;flex-direction:column;flex:1 1 auto;height:100%;min-height:0;box-sizing:border-box;font:inherit;font-size:13px;color:var(--dsw-alias-label-primary)}
 .dsh-dialog-dialog-intro{flex:none;padding:10px 12px;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary);border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsh-dialog-dialog-intro .dsh-dialog-dialog-reset{margin-top:6px;background:transparent;border:none;padding:0;color:inherit;font:inherit;font-size:11.5px;cursor:pointer;text-decoration:underline}
+.dsh-dialog-dialog-brief{margin-top:4px;color:var(--dsw-alias-label-secondary);opacity:.78;font-size:11.5px;line-height:1.45}
 .dsh-dialog-dialog-log{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
 .dsh-dialog-dialog-compose{flex:none;border-top:1px solid var(--dsw-alias-border-l1);padding:9px 10px;display:flex;flex-direction:column;gap:7px;background:var(--dsw-alias-bg-layer-1)}
 .dsh-dialog-dialog-empty{margin:auto;color:var(--dsw-alias-label-secondary);font-size:12.5px;text-align:center;line-height:1.6}
 .dsh-dialog-dialog-msg{display:flex;flex-direction:row;align-items:flex-start;gap:8px;max-width:100%;flex:none}
-.dsh-dialog-dialog-msg[data-role="user"]{flex-direction:row-reverse}
+.dsh-dialog-dialog-msg[data-role="user"]{flex-direction:row-reverse;--dsh-dialog-user-fill:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 88%,var(--dsw-alias-label-primary) 12%)}
 .dsh-dialog-dialog-avatar{flex:none;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;line-height:1;user-select:none;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
-.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-avatar{background:#95ec69;color:#111a0e;box-shadow:none}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-avatar{background:var(--dsh-dialog-user-fill);color:var(--dsw-alias-label-secondary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
 .dsh-dialog-dialog-body{position:relative;max-width:calc(100% - 76px);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;padding:8px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
 .dsh-dialog-dialog-body::after{content:"";position:absolute;top:8px;width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent}
-.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body{background:#95ec69;color:#111a0e;box-shadow:none;border-top-right-radius:3px}
-.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body::after{right:-6px;border-left:6px solid #95ec69}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body{background:var(--dsh-dialog-user-fill);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1);border-top-right-radius:3px}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body::after{right:-6px;border-left:6px solid var(--dsh-dialog-user-fill)}
 .dsh-dialog-dialog-msg[data-role="assistant"] .dsh-dialog-dialog-body{border-top-left-radius:3px}
 .dsh-dialog-dialog-msg[data-role="assistant"] .dsh-dialog-dialog-body::after{left:-6px;border-right:6px solid var(--dsw-alias-bg-layer-2)}
 .dsh-dialog-dialog-body strong{font-weight:600}
 .dsh-dialog-dialog-body code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;padding:1px 4px;border-radius:4px;background:rgba(127,127,127,.18)}
-.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body code{background:rgba(0,0,0,.13)}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body code{background:rgba(127,127,127,.22)}
 .dsh-dialog-dialog-input{box-sizing:border-box;width:100%;min-height:62px;max-height:180px;resize:vertical;padding:8px 9px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:1.5}
 .dsh-dialog-dialog-input::placeholder{color:var(--dsw-alias-label-secondary);opacity:.72}
 .dsh-dialog-dialog-input:focus{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-1px}
@@ -1264,6 +1294,29 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
     }
 
     /**
+     * Drop the answering-style brief from a delivered line.
+     *
+     * Every branch message carries the brief from `briefBody` ahead of what the
+     * person typed. The model needs it, but the transcript does not: replaying
+     * the same four lines of instructions above every bubble would bury the
+     * actual conversation. Both dictionaries are checked, not just the active
+     * one, because a line delivered in Chinese must still read cleanly after the
+     * shell switches to English (and the other way round).
+     *
+     * @param raw - one user message body as stored in the session log.
+     * @returns the text without the brief prefix.
+     */
+    function stripBrief(raw) {
+      if (typeof raw !== 'string' || raw === '') return ''
+      for (const table of [DICT.zh, DICT.en]) {
+        const brief = table?.panelBrief
+        if (typeof brief !== 'string' || brief === '') continue
+        if (raw.startsWith(brief)) return raw.slice(brief.length).replace(/^\s+/, '')
+      }
+      return raw
+    }
+
+    /**
      * Turn one session event into the lines worth showing in the branch log.
      *
      * Only user and assistant text is rendered; everything else (tool calls,
@@ -1290,8 +1343,8 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
         // context and reminder messages through this event — clock samples,
         // policy notices, skill catalogs — and those would drown the transcript.
         if (data.source?.kind !== 'user') return undefined
-        const text = stripReminders(textOf(data.content ?? data.message?.content))
-        return text === '' ? undefined : { role: 'user', text }
+        const said = stripBrief(stripReminders(textOf(data.content ?? data.message?.content)))
+        return said === '' ? undefined : { role: 'user', text: said }
       }
       if (type === 'assistant/message') {
         const text = stripReminders(textOf(data.content ?? data.message?.content))
@@ -1529,7 +1582,7 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
         if (branchId === undefined) return
         setStatus({ tone: 'info', text: text(language, 'sending') })
         try {
-          const outcome = await deliverToSession(sessions, branchId, body, 'queue')
+          const outcome = await deliverToSession(sessions, branchId, briefBody(language, body), 'queue')
           if (outcome.ok) {
             setDraft('')
             setStatus(undefined)
@@ -1552,6 +1605,9 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
         'div',
         { className: 'dsh-dialog-dialog-intro' },
         text(language, 'panelIntro'),
+        // The branch is told to answer short on every line; saying so here keeps
+        // the terse replies from reading like the model is being curt.
+        h('div', { className: 'dsh-dialog-dialog-brief' }, text(language, 'panelBriefNote')),
         branchId === undefined
           ? null
           : h(

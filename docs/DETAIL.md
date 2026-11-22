@@ -37,7 +37,7 @@ dsh-dialog-plugin/
 ├── package.json          声明 dsh.bundle.patch 与 dsh.client（web, immediately）
 ├── cordis.patch.yml      只 insert 一行 `- id: dsh-dialog-plugin`
 ├── index.js              Host 半边：把 Agent inbox 事件写进日志（104 行）
-├── client.js             全部 UI（1799 行、约 76 KB，单文件）
+├── client.js             全部 UI（1910 行、约 84 KB，单文件）
 ├── icon.svg
 └── locale/{zh,en}.json   文案
 ```
@@ -70,26 +70,28 @@ Host 半边**不参与投递**。投递走的是 Session Controller 自己的 `p
 
 | 位置 | 内容 |
 |---|---|
-| `L247` | `sessionFace(sessions, sessionId)` — 拿真正的 `SessionFace` |
-| `L282` | `deliverToSession(sessions, sessionId, body, mode = 'steer')` — 唯一投递入口 |
-| `L429` | `activityLine(name, argumentsRaw)` — 工具调用 → 一句中文 |
-| `L502` | `describeActivity(entries)` — 从事件窗口算出当前这一步 |
-| `L562` | `useActivity(sessions, sessionId)` — 订阅事件窗口（只认 `revision` 变化） |
-| `L618` | `ActivityLine` — 输入框上方那行状态（关闭时 `return null`） |
-| `L679` | `ActivityToggle` — 工具行里的「步骤提示」开关 |
-| `L708` | `const ACTIVITY_KEY = 'dsh-dialog-plugin.activity'` — 开关状态 |
-| `L744` | `useActivityOn()` — 读开关 + 订阅广播 |
-| `L772` | `const PANEL_CSS` — 全部样式，用 `--dsw-alias-*` token |
-| `L838` | `ensureStyles()` — 注入/刷新 `<style id="dsh-dialog-plugin-styles">`（内容不一致就覆写） |
-| `L898` | `InterjectButton` — 插话按钮 + 浮层（头部带 `×` 关闭键） |
-| `L1115` | `const TAB_KIND = 'dialog-branch'` |
-| `L1126` | `SideDiscussionButton` — 打开右栏 tab |
-| `L1179` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
-| `L1182` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
-| `L1195` / `L1214` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
-| `L1350` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
-| `L1438` | `SideDiscussionTab` — 右栏 body |
-| `L1716` | `apply(ctx)` — 全部注册都在这里（插话 `L1755`、旁路讨论 `L1815`、状态行 `L1829`、开关 `L1842`） |
+| `L253` | `sessionFace(sessions, sessionId)` — 拿真正的 `SessionFace` |
+| `L288` | `deliverToSession(sessions, sessionId, body, mode = 'steer')` — 唯一投递入口 |
+| `L326` | `briefBody(language, body)` — 给支线消息拼上「快捷模式」要求 |
+| `L458` | `activityLine(name, argumentsRaw)` — 工具调用 → 一句中文 |
+| `L531` | `describeActivity(entries)` — 从事件窗口算出当前这一步 |
+| `L591` | `useActivity(sessions, sessionId)` — 订阅事件窗口（只认 `revision` 变化） |
+| `L647` | `ActivityLine` — 输入框上方那行状态（关闭时 `return null`） |
+| `L708` | `ActivityToggle` — 工具行里的「步骤提示」开关 |
+| `L737` | `const ACTIVITY_KEY = 'dsh-dialog-plugin.activity'` — 开关状态 |
+| `L773` | `useActivityOn()` — 读开关 + 订阅广播 |
+| `L801` | `const PANEL_CSS` — 全部样式，用 `--dsw-alias-*` token |
+| `L868` | `ensureStyles()` — 注入/刷新 `<style id="dsh-dialog-plugin-styles">`（内容不一致就覆写） |
+| `L928` | `InterjectButton` — 插话按钮 + 浮层（头部带 `×` 关闭键） |
+| `L1145` | `const TAB_KIND = 'dialog-branch'` |
+| `L1156` | `SideDiscussionButton` — 打开右栏 tab |
+| `L1209` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
+| `L1212` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
+| `L1225` / `L1244` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
+| `L1309` | `stripBrief(raw)` — 显示时把「快捷模式」要求切掉（中英都查） |
+| `L1403` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
+| `L1491` | `SideDiscussionTab` — 右栏 body |
+| `L1772` | `apply(ctx)` — 全部注册都在这里（插话 `L1811`、旁路讨论 `L1871`、状态行 `L1885`、开关 `L1898`） |
 
 **投递链路**（两个功能共用）：
 
@@ -99,12 +101,12 @@ Host 半边**不参与投递**。投递走的是 Session Controller 自己的 `p
      → face.prompt([{type:'text',text}], mode)
 ```
 
-`sessionFace` 的实现要点（`client.js:247`）：`sessions.binding(id)` 有就直接用；
+`sessionFace` 的实现要点（`client.js:253`）：`sessions.binding(id)` 有就直接用；
 没有就 `sessions.retain(id, {source:'gateway'})` 借一个，读出 `binding.session`，
 然后**延迟 15 秒才 release**（`setTimeout(release, 15000)`）——
 因为调用方可能还要 await 一次 prompt，立刻释放会让 face 失效。
 
-`deliverToSession` 的降级策略（`client.js:282`）：`steer` 失败自动重试 `queue`，
+`deliverToSession` 的降级策略（`client.js:288`）：`steer` 失败自动重试 `queue`，
 确保文本不会因为「回合刚好结束」而静默丢失。
 
 ### 右栏 tab 的注册（踩过坑的地方）
@@ -167,6 +169,85 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
 没有出现「（进行中）」字样，按钮宽度也不随状态变化：
 
 ![运行态只用颜色](busy-colour.png)
+
+### 讨论栏的配色与「快捷模式」
+
+讨论栏（右栏 tab）里的气泡早期是微信风格：用户侧实心绿 `#95ec69`、深绿字
+`#111a0e`。这组色在 DSH 的暗色界面上很跳，也不跟随主题，所以换成
+**由主题 token 混出来的中性面**：
+
+```css
+.dsh-dialog-dialog-msg[data-role="user"]{flex-direction:row-reverse;--dsh-dialog-user-fill:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 88%,var(--dsw-alias-label-primary) 12%)}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-avatar{background:var(--dsh-dialog-user-fill);color:var(--dsw-alias-label-secondary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body{background:var(--dsh-dialog-user-fill);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1);border-top-right-radius:3px}
+```
+
+用一个局部变量 `--dsh-dialog-user-fill` 而不是逐处重复 `color-mix`，是为了让
+气泡、头像、尖角三处永远同色。底色取 `bg-layer-2` 与 `label-primary` 的 12%
+混合，比 assistant 气泡（纯 `bg-layer-2`）亮一档，**亮色主题下自动变成浅灰、
+暗色主题下是深灰**，两边都不用写死颜色。用户侧 `code` 的背景也从
+`rgba(0,0,0,.13)` 改成 `rgba(127,127,127,.22)`——在中性灰底上叠纯黑会发脏。
+
+#### 快捷模式：让支线回答「快、简洁、精确」
+
+支线的用途是快速对齐一个具体问题，但 fork 出来的子会话继承的是父会话的
+system prompt，而 `prompt(content, mode)` 的 `PromptContentPart` 只有
+`text` / `image` / `file` 三种，**没有任何字段能携带「请简短回答」这类的风格
+开关**。（`SessionFace.command()` 只能跑斜杠命令；`/model` 在
+`dsh-client-ui-model-selection` 里注册成 `popupSelect`，命令行带参数不生效，
+所以「换个小模型」这条路也走不通。）
+
+能到达分支模型的唯一通道就是正文本身，因此每条消息都由 `briefBody()` 在前面
+拼一段固定要求：
+
+```js
+function briefBody(language, body) {
+  return `${text(language, 'panelBrief')}\n\n${body}`
+}
+```
+
+要求内容是「先给结论、再给一句依据；不复述前文、不列计划、不客套、不总结；
+能一句话说清就停；引用只贴相关片段；拿不准就说不确定但仍给最可能的答案」，
+中英各一份放在 `DICT` 里。它**每条消息都带**（不是只在 fork 时投一次），
+因为支线是连续问答，每一轮都是独立请求。
+
+副作用是这段指令会进会话日志、成为气泡里的第一段。所以 `describeEvent` 读
+`user/message` 时用 `stripBrief()` 把它切掉——**中英两本字典都查**，否则在中文
+界面里发出的消息切到英文后会把指令露出来：
+
+```js
+function stripBrief(raw) {
+  if (typeof raw !== 'string' || raw === '') return ''
+  for (const table of [DICT.zh, DICT.en]) {
+    const brief = table?.panelBrief
+    if (typeof brief !== 'string' || brief === '') continue
+    if (raw.startsWith(brief)) return raw.slice(brief.length).replace(/^\s+/, '')
+  }
+  return raw
+}
+```
+
+为了不让「回答这么短」显得模型在敷衍，讨论栏头部加了一行说明
+（`.dsh-dialog-dialog-brief`，读 `panelBriefNote`）：中文「快捷模式：直接给结论，
+不铺陈。」，英文「Quick mode: answer straight, no preamble.」
+
+**端到端证据（2026-11-22 实测）**：从讨论栏输入框真实发出一条问题后，分支会话
+`session-107ad3ea-…` 的日志里 `seq=4836 agent/inbox/spliced` 的正文共 153 字，
+正是 `panelBrief` 全段 + 空行 + 用户原话：
+
+```
+这是主对话旁边的一条支线，用途是快速对齐一个具体问题。回答要求：先给结论，
+再给一句依据；不要复述前面对话、不要列计划或待办、不要客套和总结收尾；能一句
+话说清就不写第二句；引用代码或命令只贴相关片段。拿不准就直接说不确定，并给出
+最可能的答案。
+
+一句话：这个插件的旁路讨论栏是用什么方式把消息送进分支会话的？
+```
+
+`stripBrief` 的回环另用 `tools/test-brief.js` 离线验证（9 项断言全过：前缀已加、
+原话未损、空行分隔、回切后与原文一致、无前缀消息原样保留、英文段可剥离、
+空串与非字符串输入不抛异常）。该脚本从 `client.js` 里按标记切出**真实函数体**
+来跑，不是复制粘贴的副本，所以它验证的是即将运行的代码。
 
 ### 中文状态行（Activity）：把「这一步在干什么」显示在输入框上方
 
@@ -676,11 +757,12 @@ $sb.ToString()
 勿当作基准；真正的回滚基线由 `rollback.ps1` 每次写前自动备份到
 `C:\Users\30823\.dsh\profiles\desktop\rollback-backup\`）。
 
-最后状态（2026-11-22 15:26）：`client.js` 81768 字节 / 1854 行，`node --check` exit=0，
+最后状态（2026-11-22 16:05）：`client.js` 85637 字节 / 1910 行，`node --check` exit=0，
 插话浮层与右栏都只剩真实按钮，中文状态行已上界面并带「步骤提示」开关
 （开关状态存 `localStorage` 的 `dsh-dialog-plugin.activity`，刷新后保持），
 运行态文案后缀已去掉、只靠颜色（`data-busy` 蓝色描边 + tint），
-全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL|进行中` 零命中。
+讨论栏用户气泡已从微信绿改为主题中性灰，支线消息带「快捷模式」要求且显示时被切掉，
+全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL|进行中|#95ec69` 零命中。
 
 恢复基线：`D:\WB\dsh-dialog-plugin\backup\client.js.before-activity`
 （56822 字节，即加状态行之前的版本），要退掉状态行直接覆盖回去再 F5。
