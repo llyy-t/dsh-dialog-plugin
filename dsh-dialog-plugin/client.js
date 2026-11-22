@@ -70,8 +70,7 @@ window.__ModuleLoader__.load({
         panelWaitTurn: '主对话这一轮还没跑完。等它结束后再点重试，支线才能从已完成的地方分叉。',
         panelRetry: '重试',
         activityThinking: '正在思考…',
-        activityNow: '\u6b63\u5728{what}',
-        activityDone: '刚做完：{what}',
+        activityStep: '第 {n} 步 · {what}',
         activityToggle: '步骤提示',
         activityToggleOnHint: '输入框上方那一行中文正在显示。点一下可以关掉。',
         activityToggleOffHint: '输入框上方那一行中文已关闭。点一下重新打开。',
@@ -115,8 +114,7 @@ window.__ModuleLoader__.load({
         panelWaitTurn: 'The main conversation has not finished a turn yet. Retry once it has, so the branch can fork from a completed point.',
         panelRetry: 'Retry',
         activityThinking: 'Thinking…',
-        activityNow: '{what}',
-        activityDone: 'Just finished: {what}',
+        activityStep: 'Step {n} · {what}',
         activityToggle: 'Step line',
         activityToggleOnHint: 'The plain-language line above the box is showing. Click to hide it.',
         activityToggleOffHint: 'The plain-language line above the box is hidden. Click to show it.',
@@ -468,11 +466,27 @@ window.__ModuleLoader__.load({
       } else if (tool === 'grep' || tool === 'glob') {
         detail = clipLine(args.pattern, 48)
       } else if (tool === 'pwsh' || tool === 'bash') {
-        // The command text is unreadable at a glance, so a tool that carries its
-        // own short description is published verbatim.
-        const described = clipLine(args.description, 72)
-        if (described !== '') return { line: clipLine(described, ACTIVITY_MAX_CHARS), described: true }
-        detail = clipLine(firstLineOf(args.command ?? args.script), 64)
+        // The command text is unreadable at a glance, and the tool's own
+        // `description` is prose in English — the part the harness already
+        // prints on its own tool row, which is exactly the duplication this row
+        // exists to avoid. What is worth keeping is the target: the script or
+        // file the command is actually about, which the tool row never names.
+        const script = firstLineOf(args.command ?? args.script)
+        // Prefer something with a file extension: that is the file the command
+        // works on. A bare directory is only a destination, so it ranks second.
+        const candidate =
+          script.match(/[A-Za-z]:[\\/][^\s'"]+\.[A-Za-z0-9]{1,6}\b/) ??
+          script.match(/[^\s'"]+\.[A-Za-z0-9]{1,6}\b/) ??
+          script.match(/[A-Za-z]:[\\/][^\s'"]+|[^\s'"]*[\\/][^\s'"]+/)
+        const named = candidate === null ? '' : baseName(candidate[0].replace(/["']/g, ''))
+        if (named !== '') {
+          detail = named
+        } else {
+          // No path in the command: fall back to a bare program name, but only
+          // when the first token is a plain word rather than a flag.
+          const head = script.split(/\s+/)[0] ?? ''
+          detail = /^[A-Za-z][\w.+-]{0,19}$/.test(head) ? head : ''
+        }
       } else if (tool === 'web_search') {
         const queries = args.queries
         detail = clipLine(Array.isArray(queries) ? queries.join(' / ') : queries, 52)
@@ -490,7 +504,10 @@ window.__ModuleLoader__.load({
           42
         )
       }
-      return { line: clipLine(detail === '' ? verb : `${verb} ${detail}`, ACTIVITY_MAX_CHARS), described: false }
+      // The verb is always kept: it is the part that says what kind of thing is
+      // happening, and it is the only Chinese in a line whose detail may not be.
+      const body = detail === '' ? verb : `${verb} ${detail}`
+      return clipLine(body, ACTIVITY_MAX_CHARS)
     }
 
     /** Flatten a `SessionEventWindow.entries` list into the events it wraps. */
@@ -526,7 +543,7 @@ window.__ModuleLoader__.load({
      * tool-name mapping covers everything else, which keeps the row free.
      *
      * @param entries - `SessionEventWindow.entries`.
-     * @returns `{ kind, line }`, or undefined when no turn is in flight.
+     * @returns `{ kind, line, step }`, or undefined when no turn is in flight.
      */
     function describeActivity(entries) {
       const events = collectEvents(entries)
@@ -545,10 +562,19 @@ window.__ModuleLoader__.load({
       // Within the turn only the newest step is in flight. Bounding the scan to
       // it keeps a settled call from an earlier step out of the row.
       let stepAt = 0
+      let step = 0
       for (let index = events.length - 1; index >= 0; index -= 1) {
         const type = String(events[index].type ?? '')
+        // Never walk past the turn boundary: the step/end just before it belongs
+        // to the previous turn and carries the previous turn's step number.
+        if (type === 'turn/start') {
+          stepAt = index
+          break
+        }
         if (type === 'step/start' || type === 'step/end') {
           stepAt = index
+          const numbered = Number(events[index].data?.step)
+          if (Number.isFinite(numbered) && numbered > 0) step = numbered
           break
         }
       }
@@ -566,20 +592,17 @@ window.__ModuleLoader__.load({
       if (messageAt !== -1) {
         const preamble = preambleOf(events[messageAt])
         if (preamble !== undefined) {
-          return { kind: 'preamble', line: preambleLine(preamble) }
+          return { kind: 'preamble', line: preambleLine(preamble), step }
         }
       }
       if (callAt !== -1) {
         const event = events[callAt]
         const callId = typeof event.data?.callId === 'string' ? event.data.callId : ''
-        const called = activityLine(event.data?.name, event.data?.arguments)
-        // A line the tool wrote itself already reads as a sentence, so it is
-        // published as written instead of being wrapped in a verb.
-        if (called.described) return { kind: 'preamble', line: called.line }
+        const line = activityLine(event.data?.name, event.data?.arguments)
         const settled = callId !== '' && toolHasSettled(events, callAt, callId)
-        return { kind: settled ? 'done' : 'tool', line: called.line }
+        return { kind: settled ? 'done' : 'tool', line, step }
       }
-      return { kind: 'thinking', line: '' }
+      return { kind: 'thinking', line: '', step }
     }
     /**
      * Subscribe to the session's event window and report what is happening.
@@ -662,14 +685,13 @@ window.__ModuleLoader__.load({
         tone = activity.kind === 'done' ? 'done' : 'active'
         if (activity.kind === 'thinking') {
           label = text(language, 'activityThinking')
-        } else if (activity.kind === 'preamble') {
-          // The assistant's own wording already reads as a sentence, so it is
-          // shown as written instead of being wrapped in a verb.
-          label = activity.line
+        } else if (activity.step > 0) {
+          // The step counter is the one thing the harness's own tool row never
+          // shows, so the line leads with it: it is what makes this row look
+          // different from the duplicate below it.
+          label = text(language, 'activityStep', { n: activity.step, what: activity.line })
         } else {
-          label = text(language, activity.kind === 'done' ? 'activityDone' : 'activityNow', {
-            what: activity.line,
-          })
+          label = activity.line
         }
       } else if (running === true) {
         tone = 'active'

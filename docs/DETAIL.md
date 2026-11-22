@@ -102,28 +102,30 @@ Host 半边**不参与投递**。投递走的是 Session Controller 自己的 `p
 | `L253` | `sessionFace(sessions, sessionId)` — 拿真正的 `SessionFace` |
 | `L288` | `deliverToSession(sessions, sessionId, body, mode = 'steer')` — 唯一投递入口 |
 | `L326` | `briefBody(language, body)` — 给支线消息拼上「快捷模式」要求 |
-| `L458` | `activityLine(name, argumentsRaw)` — 工具调用 → 一句中文 |
-| `L531` | `describeActivity(entries)` — 从事件窗口算出当前这一步 |
-| `L591` | `useActivity(sessions, sessionId)` — 订阅事件窗口（只认 `revision` 变化） |
-| `L647` | `ActivityLine` — 输入框上方那行状态（关闭时 `return null`） |
-| `L708` | `ActivityToggle` — 工具行里的「步骤提示」开关 |
-| `L737` | `const ACTIVITY_KEY = 'dsh-dialog-plugin.activity'` — 开关状态 |
-| `L773` | `useActivityOn()` — 读开关 + 订阅广播 |
-| `L801` | `const PANEL_CSS` — 全部样式，用 `--dsw-alias-*` token |
-| `L868` | `ensureStyles()` — 注入/刷新 `<style id="dsh-dialog-plugin-styles">`（内容不一致就覆写） |
-| `L928` | `InterjectButton` — 插话按钮 + 浮层（头部带 `×` 关闭键） |
-| `L1145` | `const TAB_KIND = 'dialog-branch'` |
-| `L1156` | `SideDiscussionButton` — 打开右栏 tab |
-| `L1209` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
-| `L1212` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
-| `L1225` / `L1244` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
-| `L1278` | `sleep(ms)` — 等新 fork 的子会话把窗口加载出来 |
-| `L1290` | `sessionTailSeq(sessions, sessionId)` — 借引用读一个会话的尾部 seq |
-| `L1314` / `L1325` | `parentTailSeq` / `childTailSeq` — 两者都转调 `sessionTailSeq` |
-| `L1361` | `stripBrief(raw)` — 显示时把「快捷模式」要求切掉（中英都查） |
-| `L1455` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
-| `L1543` | `SideDiscussionTab` — 右栏 body |
-| `L1827` | `apply(ctx)` — 全部注册都在这里（插话 `L1866`、旁路讨论 `L1926`、状态行 `L1940`、开关 `L1953`） |
+| `L331` | `const ACTIVITY_MAX_CHARS = 80` — 状态行的长度上限 |
+| `L344` | `const ACTIVITY_TOOLS` — 工具名 → 中文动词（中英两套） |
+| `L458` | `activityLine(name, argumentsRaw)` — 工具调用 → 一句中文（不含步号） |
+| `L548` | `describeActivity(entries)` — 从事件窗口算出 `{ kind, line, step }` |
+| `L614` | `useActivity(sessions, sessionId)` — 订阅事件窗口（只认 `revision` 变化） |
+| `L670` | `ActivityLine` — 输入框上方那行状态（关闭时 `return null`） |
+| `L730` | `ActivityToggle` — 工具行里的「步骤提示」开关 |
+| `L759` | `const ACTIVITY_KEY = 'dsh-dialog-plugin.activity'` — 开关状态 |
+| `L795` | `useActivityOn()` — 读开关 + 订阅广播 |
+| `L823` | `const PANEL_CSS` — 全部样式，用 `--dsw-alias-*` token |
+| `L890` | `ensureStyles()` — 注入/刷新 `<style id="dsh-dialog-plugin-styles">`（内容不一致就覆写） |
+| `L950` | `InterjectButton` — 插话按钮 + 浮层（头部带 `×` 关闭键） |
+| `L1167` | `const TAB_KIND = 'dialog-branch'` |
+| `L1178` | `SideDiscussionButton` — 打开右栏 tab |
+| `L1231` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
+| `L1234` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
+| `L1247` / `L1266` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
+| `L1300` | `sleep(ms)` — 等新 fork 的子会话把窗口加载出来 |
+| `L1312` | `sessionTailSeq(sessions, sessionId)` — 借引用读一个会话的尾部 seq |
+| `L1336` / `L1347` | `parentTailSeq` / `childTailSeq` — 两者都转调 `sessionTailSeq` |
+| `L1383` | `stripBrief(raw)` — 显示时把「快捷模式」要求切掉（中英都查） |
+| `L1477` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
+| `L1565` | `SideDiscussionTab` — 右栏 body |
+| `L1849` | `apply(ctx)` — 全部注册都在这里（插话 `L1888`、旁路讨论 `L1948`、状态行 `L1962`、开关 `L1975`） |
 
 **投递链路**（两个功能共用）：
 
@@ -366,18 +368,57 @@ window  = source.getSnapshot()                   // { entries, revision }
 source.subscribe(read) + setInterval(read, 900)  // 丢帧兜底
 ```
 
-**讲什么话**，优先级从高到低：
+**讲什么话**（2026-11-22 重做过一轮，原因见下）：
 
-1. **工具自带的 `description`** —— `pwsh` 的 422 次调用里 422 次都带这个字段，
-   是最短最像人话的一句（「List plugin project files」）。命中时**原样显示**，
-   不再套动词，避免出现「正在执行命令 Refresh and capture…」这种半中半英。
-2. **本助手写的 `▶` 行** —— 落在 `assistant/message` 的 `content[].type === 'text'`
+这一行现在固定是 **`第 N 步 · <中文动作 + 目标>`**，例如
+`第 81 步 · 执行命令 ui.ps1`、`读文件 client.js`、`搜索代码 needle`。
+
+优先级从高到低：
+
+1. **本助手写的 `▶` 行** —— 落在 `assistant/message` 的 `content[].type === 'text'`
    里，且与 `tool-call` 在同一条消息中，所以工具刚开跑时它已经在事件窗内，
-   零额外成本、不调模型。会去掉「第 N 步：」这种记账前缀，再按句号/分号/冒号
-   截到首句，最后裁到 80 字符。
-3. **工具名映射表** —— `ACTIVITY_TOOLS` 里按工具名给中文动词 + 参数摘要
+   零额外成本、不调模型。会去掉「第 N 步：」这种记账前缀（步号改由状态行自己给），
+   再按句号/分号/冒号截到首句，最后裁到 80 字符。
+2. **工具名映射表** —— `ACTIVITY_TOOLS` 里按工具名给中文动词 + 参数摘要
    （`read` →「读文件 client.js」、`grep` →「搜索代码 needle」）。
-4. 都没有 → 「正在思考…」。
+3. 都没有 → 「正在思考…」。
+
+**为什么不用工具的 `description` 了**（这是本节最重要的一条教训）：
+第一版把 `pwsh` 的 `description` 原样发布（「Refresh page and screenshot」），
+但 DSH 自己的工具行显示的是 `›_ 正在运行命令 · Refresh page and screenshot`
+——**同一个字段、同一句话**，用户的原话是「为啥感觉点开步骤提示和没点步骤提示差不多」。
+
+量化过（`D:\DSH插件开发\tools\why-same.js`，跑本会话 1548 次工具调用）：
+
+```
+tool/call events           = 1548
+  introduced by a ▶ line   = 40   (2.6%)
+assistant messages w/ text = 149
+text parts carrying ▶      = 42
+  same message as tool-call= 40
+```
+
+只有 2.6% 的步骤有我手写的中文摘要，其余 97.4% 都会回退到工具名映射。
+所以「回退出来的那句话」必须是 DSH 那行**不会说的话**，否则开关就白开。
+
+**步号是这一行唯一独占的信息**：DSH 自带那行从不报步号，所以
+`第 81 步 · …` 与 `正在运行命令 · …` 一眼就能分开。步号取自最近的
+`step/start`／`step/end` 的 `data.step`，并**不越过 `turn/start`**
+（越过去会拿到上一回合残留的步号，回放时看到过 `step=182` 这种越界值）。
+
+**pid/pwsh 的目标怎么取**：命令行本身不可读，工具的 `description` 又是英文散文
+（正是要避开的重复源），所以只保留「这条命令在操作哪个文件」——
+
+```js
+const candidate =
+  script.match(/[A-Za-z]:[\\/][^\s'"]+\.[A-Za-z0-9]{1,6}\b/) ??   // 带扩展名的绝对路径
+  script.match(/[^\s'"]+\.[A-Za-z0-9]{1,6}\b/) ??                 // 带扩展名的相对路径
+  script.match(/[A-Za-z]:[\\/][^\s'"]+|[^\s'"]*[\\/][^\s'"]+/)    // 退化成裸路径
+detail = baseName(candidate[0].replace(/["']/g, ''))
+```
+
+都取不到才退回「裸程序名」，且只在首 token 是普通单词时才用
+（`/^[A-Za-z][\w.+-]{0,19}$/`，过滤掉 `-` 开头的参数和奇怪路径）。
 
 **只扫描当前 step**：先反向找最近的 `step/start`／`step/end` 拿到 `stepAt`，
 再只在 `[stepAt, end]` 里找 `tool/call` 与 `assistant/message`。
@@ -385,15 +426,25 @@ source.subscribe(read) + setInterval(read, 900)  // 丢帧兜底
 
 **验证方式**：`D:\DSH插件开发\tools\test-activity.js` 把 client.js 里的纯函数
 切片出来（`new Function` 注入 `detectLanguage`），解码真实会话的 zstd 文件，
-回放投喂 `describeActivity`，打印每个探针点的输出。不用开界面就能验算法。
+回放投喂 `describeActivity`，打印每个探针点的 `kind`、`step` 与 `line`。
+不用开界面就能验算法。当前输出：
+
+```
+at  9576 -> tool step=1 :: 执行命令
+at  9581 -> tool step=2 :: 执行命令 New-Item
+at  9935 -> tool step=62 :: 执行命令
+```
 
 实际渲染效果（输入框上方那一行，圆点 + 一句话）：
 
 ![中文状态行](activity-line.png)
 
-这张图里显示的是 `Capture final activity line screenshot for docs` ——
-工具自带的 `description` 被原样发布，没有套「正在执行命令」这种外壳，
-这就是为了让句子短、能一眼看完。
+上半是打开状态（`● 第 81 步 · 执行命令 ui.ps1`），下半是关掉后的同一屏：
+那行消失，而 DSH 自带的 `›_ 正在运行命令 · Click toggle at 1255,904` 仍在
+——所以这句话必须由步号和「目标文件」承担，不能靠复述工具描述。
+
+![步骤提示开关对比](step-line.png)
+
 
 **开关**：这一行默认打开，工具行里有一颗「步骤提示」按钮可以关掉它。
 
@@ -414,10 +465,14 @@ source.subscribe(read) + setInterval(read, 900)  // 丢帧兜底
 
 | 操作 | 结果 |
 | --- | --- |
-| 默认加载 | 输入框上方出现 `● 说明文字`，「步骤提示」按钮高亮 |
+| 默认加载 | 输入框上方出现 `● 第 N 步 · <动作>`，「步骤提示」按钮高亮 |
 | 点一下按钮 | 该行消失，按钮变暗，tooltip 变「已关闭，点一下重新打开」 |
 | 再点一下 | 该行立刻回来，tooltip 变「正在显示，点一下可以关掉」 |
 | 关闭后按 F5 | 仍然是关闭状态（localStorage 生效），按钮仍在原位可点 |
+
+「步骤提示」按钮的屏幕坐标会随窗口位置变化，实测值为 **(1255,904)**
+（1920×1080、窗口 rect L=450 T=138 R=1746 B=966 时）。
+点错坐标会落到「插话」按钮上把浮层打开 —— 排查时用 4x 裁剪工具行确认。
 
 下图上半是状态行本身，下半是工具行里那颗「步骤提示」按钮
 （此时为打开状态，所以带品牌色描边）：
@@ -915,16 +970,18 @@ $sb.ToString()
 勿当作基准；真正的回滚基线由 `rollback.ps1` 每次写前自动备份到
 `C:\Users\30823\.dsh\profiles\desktop\rollback-backup\`）。
 
-最后状态（2026-11-22 17:45）：`client.js` 87886 字节 / 1965 行，`index.js` 6578 字节，
+最后状态（2026-11-22 18:25）：`client.js` 89098 字节 / 1987 行，`index.js` 6578 字节，
 两者 `node --check` 均 exit=0，
 插话浮层与右栏都只剩真实按钮，中文状态行已上界面并带「步骤提示」开关
 （开关状态存 `localStorage` 的 `dsh-dialog-plugin.activity`，刷新后保持），
+**状态行格式已改为 `第 N 步 · <中文动作 + 目标>`**（步号是 DSH 自带工具行
+从不显示的信息，见第二节「为什么不用工具的 description」），
 运行态文案后缀已去掉、只靠颜色（`data-busy` 蓝色描边 + tint），
 讨论栏用户气泡已从微信绿改为主题中性灰（`color-mix` 78%/22%，实测用户
 `#59595b` / 助手 `#2c2c2e`），状态行「刚做完」圆点也去绿，
 支线消息带「快捷模式」要求且显示时被切掉，支线会话的 `reasoningEffort`
 由 Host 侧降到 `low`（实测 `request/header` 从 `high` 变 `low`，主会话仍 `high`），
-全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL|进行中|#95ec69|state-success-primary` 零命中。
+全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL|进行中|#95ec69|state-success-primary|activityNow|activityDone` 零命中。
 
 恢复基线：`D:\WB\dsh-dialog-plugin\backup\client.js.before-activity`
 （56822 字节，即加状态行之前的版本），要退掉状态行直接覆盖回去再 F5。
