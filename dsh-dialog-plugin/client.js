@@ -834,7 +834,7 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
 .dsh-dialog-dialog-compose{flex:none;border-top:1px solid var(--dsw-alias-border-l1);padding:9px 10px;display:flex;flex-direction:column;gap:7px;background:var(--dsw-alias-bg-layer-1)}
 .dsh-dialog-dialog-empty{margin:auto;color:var(--dsw-alias-label-secondary);font-size:12.5px;text-align:center;line-height:1.6}
 .dsh-dialog-dialog-msg{display:flex;flex-direction:row;align-items:flex-start;gap:8px;max-width:100%;flex:none}
-.dsh-dialog-dialog-msg[data-role="user"]{flex-direction:row-reverse;--dsh-dialog-user-fill:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 88%,var(--dsw-alias-label-primary) 12%)}
+.dsh-dialog-dialog-msg[data-role="user"]{flex-direction:row-reverse;--dsh-dialog-user-fill:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 78%,var(--dsw-alias-label-primary) 22%)}
 .dsh-dialog-dialog-avatar{flex:none;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;line-height:1;user-select:none;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
 .dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-avatar{background:var(--dsh-dialog-user-fill);color:var(--dsw-alias-label-secondary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
 .dsh-dialog-dialog-body{position:relative;max-width:calc(100% - 76px);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;padding:8px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
@@ -859,7 +859,7 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
 .dsh-dialog-activity-dot{flex:none;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.45}
 .dsh-dialog-activity[data-tone="active"] .dsh-dialog-activity-dot{background:var(--dsw-alias-brand-primary);opacity:1;animation:dsh-dialog-activity-pulse 1.4s ease-in-out infinite}
 .dsh-dialog-activity[data-tone="active"] .dsh-dialog-activity-text{color:var(--dsw-alias-label-primary)}
-.dsh-dialog-activity[data-tone="done"] .dsh-dialog-activity-dot{background:var(--dsw-alias-state-success-primary);opacity:.8}
+.dsh-dialog-activity[data-tone="done"] .dsh-dialog-activity-dot{background:var(--dsw-alias-label-secondary);opacity:.55}
 .dsh-dialog-activity-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 @keyframes dsh-dialog-activity-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.78)}}
 `
@@ -1274,6 +1274,58 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
       return 0
     }
 
+    /** Resolve after `ms`, used to let a freshly forked child load its window. */
+    function sleep(ms) {
+      return new Promise(resolve => globalThis.setTimeout(resolve, ms))
+    }
+
+    /**
+     * Read the highest event seq a session currently holds, borrowing a
+     * reference for the read only.
+     *
+     * @param sessions - the sessions service.
+     * @param sessionId - the session to read.
+     * @returns the highest seq, or 0 when nothing readable is there.
+     */
+    function sessionTailSeq(sessions, sessionId) {
+      let borrowed
+      try {
+        borrowed = sessions.retain?.(sessionId, { source: 'gateway' })
+        return tailSeqOf(borrowed?.binding?.eventSource)
+      } catch {
+        return 0
+      } finally {
+        try {
+          borrowed?.release?.()
+        } catch {
+          /* releasing a reference that was never taken is not an error here */
+        }
+      }
+    }
+
+    /**
+     * The seq the parent already holds. Everything at or below it is inherited
+     * by the fork and must stay out of the discussion panel.
+     *
+     * @param sessions - the sessions service.
+     * @param parentId - the session the panel was opened from.
+     * @returns the parent tail seq, or 0 when the parent holds no events.
+     */
+    function parentTailSeq(sessions, parentId) {
+      return sessionTailSeq(sessions, parentId)
+    }
+
+    /**
+     * The seq the forked child holds after copying the parent.
+     *
+     * @param sessions - the sessions service.
+     * @param childId - the session created by `fork`.
+     * @returns the child tail seq, or 0 while its window is still empty.
+     */
+    function childTailSeq(sessions, childId) {
+      return sessionTailSeq(sessions, childId)
+    }
+
     /**
      * Drop the injected `<system-reminder>` blocks from a message body.
      *
@@ -1516,30 +1568,33 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
         setPhase('starting')
         setFailure('')
         try {
+          // The child is a copy of the parent up to a boundary seq, so the
+          // boundary has to be a seq the PARENT already holds. Read it before
+          // forking: right after the fork the child's window can still be
+          // empty, and reading 0 there would replay the whole parent history
+          // into the panel — which looks exactly like "the panel shows the
+          // main conversation".
+          const boundary = parentTailSeq(sessions, parentId)
           let childId
           await sessions.fork({
             sessionId: parentId,
+            ...(boundary > 0 ? { atSeq: boundary } : {}),
             increaseTitle: true,
             onCreated: created => {
               childId = created
             },
           })
           if (childId === undefined) throw new Error('fork returned no child id')
-          // The child starts as an exact copy of the parent, so its tail right
-          // after the fork is the boundary below which everything is inherited.
-          // Retain once here only to read that tail, then hand it straight back.
-          let from = 0
-          try {
-            const probe = sessions.retain?.(childId, { source: 'gateway' })
-            if (probe !== undefined) {
-              try {
-                from = tailSeqOf(probe.binding?.eventSource)
-              } finally {
-                probe.release?.()
-              }
+          // An empty parent legitimately branches from 0; otherwise the parent
+          // tail is the boundary. Only when the parent window was not readable
+          // at all do we fall back to probing the child, retrying briefly
+          // because its window loads asynchronously.
+          let from = boundary
+          if (from === 0) {
+            for (let attempt = 0; attempt < 6 && from === 0; attempt += 1) {
+              from = childTailSeq(sessions, childId)
+              if (from === 0) await sleep(120)
             }
-          } catch {
-            from = 0
           }
           writeBranch(parentId, { id: childId, from })
           // The transcript hook borrows its own reference, so nothing is held here.

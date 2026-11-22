@@ -44,7 +44,9 @@ dsh-dialog-plugin/
 
 ### Host 半边（`index.js`）
 
-只做一件事：把 `agent/inbox/inserted` 和 `agent/inbox/claimed` 两个事件追加到
+做两件事：留验收证据，以及给支线降推理档位。
+
+**一、验收证据日志。** 把 `agent/inbox/inserted` 和 `agent/inbox/claimed` 两个事件追加到
 
 ```
 C:\Users\30823\.dsh\dsh-dialog-plugin\inbox.log
@@ -61,8 +63,35 @@ C:\Users\30823\.dsh\dsh-dialog-plugin\inbox.log
 `steer` 会立刻触发 `claimed`；`queue` 要等下一轮才 `claimed`。所以日志能直接回答
 「我这句话是插进了当前回合，还是排到下一轮了」。
 
+**二、支线降档（`cheapenBranch`）。** 讨论栏发出去的消息都带
+「快捷模式」前缀（`briefBody` 拼的），Host 侧就靠这段前缀认出「这是一条支线」：
+
+```js
+const BRANCH_MARKERS = ['这是主对话旁边的一条支线', 'This is a side branch next to the main conversation']
+const BRANCH_REASONING_EFFORT = 'low'
+
+ctx.on('agent/inbox/inserted', payload => { … cheapenBranch(payload?.agent, payload?.message) })
+
+function cheapenBranch(agent, message) {
+  … 命中前缀后 …
+  const current = agent.model.current()
+  if (current.reasoningEffort === BRANCH_REASONING_EFFORT) return
+  agent.model.select({ provider: current.provider, model: current.model, reasoningEffort: 'low' })
+}
+```
+
+两个关键点：
+
+- **在 `agent/inbox/inserted` 里改，不在 `agent/pre-step` 里改。** Agent 读
+  `model.current()` 是在 pre-step waterfall **之前**（`dsh-agent-loop/lib/index.js`：
+  先 `const selection = this.model.current()`，再 `dispatch.waterfall("agent/pre-step", …)`），
+  在 pre-step 里改只会影响再下一步。
+- **只用 `agent.model.select()`，绝不碰 `session.selectModel` 远程接口。** 后者的
+  Host 实现里有 `void this.ctx.agentDefaultModel.saveSelection(selected)`，
+  会把全局默认档位一起改掉 —— 用户明确要求「正常对话保持不变」。
+
 Host 半边**不参与投递**。投递走的是 Session Controller 自己的 `prompt` 面。
-因此把 Host 半边禁用，UI 仍然全功能 —— 只是没有日志了。
+因此把 Host 半边禁用，UI 仍然全功能 —— 只是没有日志、支线也不会降档。
 
 ### Client 半边（`client.js`）
 
@@ -88,10 +117,13 @@ Host 半边**不参与投递**。投递走的是 Session Controller 自己的 `p
 | `L1209` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
 | `L1212` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
 | `L1225` / `L1244` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
-| `L1309` | `stripBrief(raw)` — 显示时把「快捷模式」要求切掉（中英都查） |
-| `L1403` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
-| `L1491` | `SideDiscussionTab` — 右栏 body |
-| `L1772` | `apply(ctx)` — 全部注册都在这里（插话 `L1811`、旁路讨论 `L1871`、状态行 `L1885`、开关 `L1898`） |
+| `L1278` | `sleep(ms)` — 等新 fork 的子会话把窗口加载出来 |
+| `L1290` | `sessionTailSeq(sessions, sessionId)` — 借引用读一个会话的尾部 seq |
+| `L1314` / `L1325` | `parentTailSeq` / `childTailSeq` — 两者都转调 `sessionTailSeq` |
+| `L1361` | `stripBrief(raw)` — 显示时把「快捷模式」要求切掉（中英都查） |
+| `L1455` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
+| `L1543` | `SideDiscussionTab` — 右栏 body |
+| `L1827` | `apply(ctx)` — 全部注册都在这里（插话 `L1866`、旁路讨论 `L1926`、状态行 `L1940`、开关 `L1953`） |
 
 **投递链路**（两个功能共用）：
 
@@ -177,16 +209,23 @@ body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7
 **由主题 token 混出来的中性面**：
 
 ```css
-.dsh-dialog-dialog-msg[data-role="user"]{flex-direction:row-reverse;--dsh-dialog-user-fill:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 88%,var(--dsw-alias-label-primary) 12%)}
+.dsh-dialog-dialog-msg[data-role="user"]{flex-direction:row-reverse;--dsh-dialog-user-fill:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 78%,var(--dsw-alias-label-primary) 22%)}
 .dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-avatar{background:var(--dsh-dialog-user-fill);color:var(--dsw-alias-label-secondary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
 .dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body{background:var(--dsh-dialog-user-fill);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1);border-top-right-radius:3px}
 ```
 
 用一个局部变量 `--dsh-dialog-user-fill` 而不是逐处重复 `color-mix`，是为了让
-气泡、头像、尖角三处永远同色。底色取 `bg-layer-2` 与 `label-primary` 的 12%
-混合，比 assistant 气泡（纯 `bg-layer-2`）亮一档，**亮色主题下自动变成浅灰、
-暗色主题下是深灰**，两边都不用写死颜色。用户侧 `code` 的背景也从
-`rgba(0,0,0,.13)` 改成 `rgba(127,127,127,.22)`——在中性灰底上叠纯黑会发脏。
+气泡、头像、尖角三处永远同色。底色取 `bg-layer-2` 与 `label-primary` 的 22%
+混合（先取 12%，实测两色只差 #454547 / #2c2c2e 一档、看不清，调亮到 22% 后
+用户气泡是 #59595b、助手仍是 #2c2c2e，明度差才够），比 assistant 气泡
+（纯 `bg-layer-2`）亮一档，**亮色主题下自动变成浅灰、暗色主题下是深灰**，
+两边都不用写死颜色。用户侧 `code` 的背景也从 `rgba(0,0,0,.13)` 改成
+`rgba(127,127,127,.22)`——在中性灰底上叠纯黑会发脏。
+
+顺带把状态行「刚做完：xxx」前面那个圆点也去绿了：它原来取
+`--dsw-alias-state-success-primary`（`#22c55e`）配 `opacity:.8`，是插件里最后一处
+绿色，现在改 `--dsw-alias-label-secondary` 配 `opacity:.55`，中性灰。
+（`.dsh-dialog-activity[data-tone="done"] .dsh-dialog-activity-dot`）
 
 #### 快捷模式：让支线回答「快、简洁、精确」
 
@@ -254,6 +293,54 @@ function stripBrief(raw) {
 原话未损、空行分隔、回切后与原文一致、无前缀消息原样保留、英文段可剥离、
 空串与非字符串输入不抛异常）。该脚本从 `client.js` 里按标记切出**真实函数体**
 来跑，不是复制粘贴的副本，所以它验证的是即将运行的代码。
+
+#### 支线还单独降推理档位（`low`），主对话保持不动
+
+文字上的「说短点」只影响输出长度，不影响模型思考多久。用户实测「一句话问下去
+也要等很久」，所以支线另外把 `reasoningEffort` 从全局的 `high` 降到 `low`。
+
+**为什么不能在客户端做。** `dsh-client-ui-model-selection` 内部调的远程接口
+`session.selectModel` 在 Host 侧长这样（`dsh-api-session-controller/src/commands.ts`）：
+
+```ts
+agent.model.select(selected)
+void this.ctx.agentDefaultModel.saveSelection(selected).catch(…)
+```
+
+第二行会**把选中的档位写成全局默认**（落到 profile 的 `cordis.patch.yml`）。
+用它降支线档位，主对话下一次也会变 `low` —— 正好违背「正常对话保持不变」。
+所以这条路直接排除。
+
+**改成 Host 侧只对那一个 agent 下手。** `agent.model.select()` 只往**本会话**日志追加
+一条 `model/selection` 事件，不碰全局默认。触发点选在 `agent/inbox/inserted`：
+
+```js
+const current = agent.model.current()
+if (current.reasoningEffort === 'low') return
+agent.model.select({ provider: current.provider, model: current.model, reasoningEffort: 'low' })
+```
+
+**为什么不在 `agent/pre-step` 里改。** `dsh-agent-loop/lib/index.js` 的顺序是
+先 `const selection = this.model.current()`、再 `dispatch.waterfall("agent/pre-step", { …, modelSelection: selection })`，
+在 pre-step 里改只对**再下一步**生效，第一句依然按 `high` 跑。放在 inbox 插入时改，
+同一个回合的第一个 step 就已经是 `low`。
+
+**怎么认出「这是支线」。** `SessionHeader` 区分不出来：普通 fork 的 `parentSession`
+可能是空的，`isSeeded` 只说明「含 fork 继承前缀」，旁路讨论的 fork 与其它 fork 没有
+可辨别字段。所以认 **内容标记** —— 讨论栏每条消息都带 `panelBrief` 前缀
+（`BRANCH_MARKERS` 里存了中英两句开头，必须与 `client.js` 的 `DICT.*.panelBrief` 保持一致）。
+
+**实测证据**（分支会话 `session-64818cf0-…` 的日志）：
+
+```
+request/header seq=8515  effort=high      ← 改之前
+model/selection seq=8729 {provider: workbuddy, model: deepseek-v4.1-flash, reasoningEffort: low}
+request/header seq=8735  effort=low       ← 下一次请求就降下来了
+```
+
+同一时刻主会话 `session-4381cd64-…` 的最后一条 `request/header seq=9192` 仍是
+`effort=high`；`cordis.patch.yml` 里 `agent-default-model.reasoningEffort` 仍是 `high`
+（文件 mtime 也未因这次改动变过）——**「只降支线、主对话不动」两个方向都验到了**。
 
 ### 中文状态行（Activity）：把「这一步在干什么」显示在输入框上方
 
@@ -496,6 +583,56 @@ False / err=203，此路不通。
 这是刻意不做 auto-fork 的原因（`client.js:998-1000` 有注释）：
 如果挂载即 fork，每次刷新都会多留一个 fork 出来的会话。
 现在是**用户点「开始讨论」才 fork**，id 按父会话记在 localStorage。
+
+### 5.1 讨论栏会重放主会话历史 —— fork 边界必须显式传 `atSeq`
+
+**现象**：右栏讨论栏里出现了主对话几分钟前才说的话，看起来像「讨论栏读了主会话」，
+而且发出去的消息也不创建新支线。
+
+**根因**：`fork` 出来的子会话是父会话的完整副本，插件要记一条「边界 seq」，
+表示「这个 seq 以下是继承来的，不要显示」。旧实现是 fork **之后**去读子会话窗口的
+尾部 seq：
+
+```js
+await sessions.fork({ sessionId: parentId, increaseTitle: true, onCreated })
+const probe = sessions.retain?.(childId, { source: 'gateway' })
+let from = 0
+try { from = tailSeqOf(probe.binding?.eventSource) } catch { from = 0 }
+```
+
+fork 刚返回时子会话的事件窗口还在异步加载，`getSnapshot().entries` 可能是空数组，
+`tailSeqOf` 就返回 0。而 `from: 0` 的语义是「从 seq 0 全量显示」，
+于是 `messagesFromEntries` 把继承来的整段父历史都渲染出来 —— 面板看起来就是主会话。
+
+**修法**（`client.js` 的 `startBranch`）：边界改在 fork **之前**从**父会话**读，
+并把它显式传给 `fork` 的 `atSeq`；只有父会话本身是空的时候才 `from = 0`：
+
+```js
+const boundary = parentTailSeq(sessions, parentId)   // 读父会话尾部 seq
+await sessions.fork({
+  sessionId: parentId,
+  ...(boundary > 0 ? { atSeq: boundary } : {}),
+  increaseTitle: true,
+  onCreated: created => { childId = created },
+})
+let from = boundary
+if (from === 0) {
+  // 父窗口读不到时才退回读子会话，且重试几次等它加载
+  for (let attempt = 0; attempt < 6 && from === 0; attempt += 1) {
+    from = childTailSeq(sessions, childId)
+    if (from === 0) await sleep(120)
+  }
+}
+```
+
+`parentTailSeq` / `childTailSeq` 都走同一个 `sessionTailSeq(sessions, id)`：
+`retain(id, { source: 'gateway' })` 借一次引用读窗口尾部，`finally` 里 `release`。
+
+**验证**（实测）：在会话 `session-4381cd64`（maxseq 8393）点「开始讨论」，
+新 fork 出 `session-64818cf0`，面板显示 **「还没有消息，说点什么开始。」**
+（修之前这里会铺满主会话历史）；随后输入并发送 `气泡边界测试 9142`，
+落到 `session-64818cf0` 的 `agent/inbox/spliced seq=8397` 与 `user/message seq=8401`，
+主会话与其他会话里该串 **0 命中**。
 
 ### 6. 主题 token 必须用 `--dsw-alias-*`（踩过两个坑）
 
@@ -763,15 +900,23 @@ $sb.ToString()
 勿当作基准；真正的回滚基线由 `rollback.ps1` 每次写前自动备份到
 `C:\Users\30823\.dsh\profiles\desktop\rollback-backup\`）。
 
-最后状态（2026-11-22 16:05）：`client.js` 85637 字节 / 1910 行，`node --check` exit=0，
+最后状态（2026-11-22 17:45）：`client.js` 87886 字节 / 1965 行，`index.js` 6578 字节，
+两者 `node --check` 均 exit=0，
 插话浮层与右栏都只剩真实按钮，中文状态行已上界面并带「步骤提示」开关
 （开关状态存 `localStorage` 的 `dsh-dialog-plugin.activity`，刷新后保持），
 运行态文案后缀已去掉、只靠颜色（`data-busy` 蓝色描边 + tint），
-讨论栏用户气泡已从微信绿改为主题中性灰，支线消息带「快捷模式」要求且显示时被切掉，
-全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL|进行中|#95ec69` 零命中。
+讨论栏用户气泡已从微信绿改为主题中性灰（`color-mix` 78%/22%，实测用户
+`#59595b` / 助手 `#2c2c2e`），状态行「刚做完」圆点也去绿，
+支线消息带「快捷模式」要求且显示时被切掉，支线会话的 `reasoningEffort`
+由 Host 侧降到 `low`（实测 `request/header` 从 `high` 变 `low`，主会话仍 `high`），
+全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL|进行中|#95ec69|state-success-primary` 零命中。
 
 恢复基线：`D:\WB\dsh-dialog-plugin\backup\client.js.before-activity`
 （56822 字节，即加状态行之前的版本），要退掉状态行直接覆盖回去再 F5。
 只退开关、保留状态行：删掉 `apply()` 里 `id: 'dsh-dialog-activity-switch'` 那次
 `ctx.slots.register`，并把 `ActivityLine` 第一行的 `const [on] = useActivityOn()`
 与 `if (on !== true) return null` 一并去掉。
+只退「支线降档」、保留其它：删掉 `index.js` 里 `apply()` 中
+`cheapenBranch(payload?.agent, payload?.message)` 那一行（以及不再使用的
+`BRANCH_MARKERS` / `BRANCH_REASONING_EFFORT` / `isBranchText` / `cheapenBranch`），
+日志功能不受影响。

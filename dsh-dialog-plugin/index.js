@@ -15,6 +15,13 @@
  * picked up by the current turn or deferred — which is exactly the evidence a
  * "did my interjection land?" question needs.
  *
+ * The second thing the Host half does is cheaper side discussions. The
+ * discussion panel forks a Session and prefixes every line with a short
+ * "quick mode" brief; that prefix is the only reliable mark of a side branch,
+ * because an ordinary fork carries no distinguishing header field. Recognising
+ * the mark lets the Host drop just that Session to a lower reasoning effort
+ * before its turn starts, while the main conversation keeps the global default.
+ *
  * `apply` is optional work: the UI keeps working when this half is disabled,
  * because delivery itself goes through the Session Controller's own `prompt`
  * face rather than through anything registered here.
@@ -30,6 +37,67 @@ const LOG_FILE = join(LOG_DIR, 'inbox.log')
 
 /** Cap on the message text echoed into the log, so one huge paste stays readable. */
 const MAX_LOGGED_TEXT = 400
+
+/**
+ * Opening words of the "quick mode" brief the discussion panel puts in front of
+ * every line it sends to a branch Session.
+ *
+ * The panel writes that brief in the reader's language, so both spellings are
+ * recognised here. These strings must stay in step with `DICT.zh.panelBrief`
+ * and `DICT.en.panelBrief` in `client.js`.
+ */
+const BRANCH_MARKERS = [
+  '这是主对话旁边的一条支线',
+  'This is a side branch next to the main conversation',
+]
+
+/**
+ * Reasoning effort a side branch runs at, so a discussion settles quickly
+ * instead of matching the main conversation's depth.
+ */
+const BRANCH_REASONING_EFFORT = 'low'
+
+/**
+ * Whether one text part belongs to a discussion branch rather than the main
+ * conversation.
+ * @param text - one text part of a prompt or inbox message.
+ * @returns true when the text opens with the quick-mode brief.
+ */
+function isBranchText(text) {
+  if (typeof text !== 'string') return false
+  const head = text.trimStart()
+  return BRANCH_MARKERS.some(marker => head.startsWith(marker))
+}
+
+/**
+ * Drop one discussion branch to the cheaper reasoning effort.
+ *
+ * This runs when the line enters the inbox, not when the step starts: the
+ * Agent reads its model selection before the pre-step waterfall runs, so a
+ * change made there would only reach the step after it. Selecting on insertion
+ * also records the choice in the branch's own log, which keeps it in force when
+ * that Session is resumed later.
+ *
+ * @param agent - the Agent driving the branch Session.
+ * @param message - the inbox message just inserted.
+ */
+function cheapenBranch(agent, message) {
+  const parts = Array.isArray(message?.content) ? message.content : []
+  const fromBranch = parts.some(part => part?.type === 'text' && isBranchText(part.text))
+  if (!fromBranch) return
+  const current = agent?.model?.current?.()
+  if (current === undefined) return
+  if (current.reasoningEffort === BRANCH_REASONING_EFFORT) return
+  try {
+    agent.model.select({
+      provider: current.provider,
+      model: current.model,
+      reasoningEffort: BRANCH_REASONING_EFFORT,
+    })
+  } catch (error) {
+    console.warn('[dsh-dialog-plugin] could not lower the side branch reasoning effort:', error)
+  }
+}
 
 /**
  * Summarize a UserMessage for the log without dumping its whole payload.
@@ -71,7 +139,8 @@ async function record(record) {
 }
 
 /**
- * Mount the Host half: tail the Agent inbox feed into a log file.
+ * Mount the Host half: tail the Agent inbox feed into a log file, and keep
+ * discussion branches on a cheaper reasoning effort.
  * @param ctx - the Host cordis context.
  */
 export function apply(ctx) {
@@ -84,6 +153,7 @@ export function apply(ctx) {
         messageId: payload?.message?.id,
         text: describeMessage(payload?.message),
       })
+      cheapenBranch(payload?.agent, payload?.message)
     })
 
     const offClaimed = ctx.on('agent/inbox/claimed', payload => {
