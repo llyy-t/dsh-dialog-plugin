@@ -231,6 +231,12 @@ function stripBrief(raw) {
 （`.dsh-dialog-dialog-brief`，读 `panelBriefNote`）：中文「快捷模式：直接给结论，
 不铺陈。」，英文「Quick mode: answer straight, no preamble.」
 
+下图是真实界面（3 倍放大）：头部三行是「分叉说明 / 快捷模式 / 重建支线」，
+用户气泡是中性灰、右侧带头像，助手气泡是更暗一档的灰、左侧带头像——两种角色
+靠位置和明度区分，不再靠绿色：
+
+![讨论栏气泡与快捷模式](discussion-panel.png)
+
 **端到端证据（2026-11-22 实测）**：从讨论栏输入框真实发出一条问题后，分支会话
 `session-107ad3ea-…` 的日志里 `seq=4836 agent/inbox/spliced` 的正文共 153 字，
 正是 `panelBrief` 全段 + 空行 + 用户原话：
