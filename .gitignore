@@ -1,0 +1,15 @@
+﻿# Local-only artefacts
+backup/
+node_modules/
+shots/
+*.log
+
+# Third-party material kept out of the published repo:
+# research/ holds extracts of DSH's own proprietary sources (from app.asar),
+# used only as local reference while developing this plugin.
+research/
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store

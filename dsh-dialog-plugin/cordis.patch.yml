@@ -1,0 +1,7 @@
+# dsh-dialog-plugin bundle patch
+#
+# Mounts one Host-side row for the plugin. The browser half rides the same
+# package through `dsh.client` in package.json, so it needs no second row.
+- insert:
+    - id: dsh-dialog-plugin
+      name: 'dsh-dialog-plugin'

@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "title": "Interject and side chat",
+    "description": "An interject button beside the composer that drops a message into the running turn, and a collapsible right-hand discussion panel that keeps its own separate conversation."
+  },
+  "interject": {
+    "button": "Interject (while I am working)",
+    "buttonIdle": "Interject",
+    "title": "Interject into the running turn",
+    "hint": "Your message reaches the current turn at its next step — no need to wait for it to finish.",
+    "placeholder": "Type a remark, a correction, or a question…",
+    "send": "Interject",
+    "cancel": "Cancel",
+    "sent": "Interjected.",
+    "sentQueued": "The turn already finished, so this went out as the next message.",
+    "empty": "Type something first.",
+    "failed": "Could not deliver: {reason}"
+  },
+  "dialog": {
+    "tabTitle": "Discussion",
+    "heading": "Side discussion",
+    "empty": "A private channel for working out a disagreement. It runs on its own conversation, so nothing here disturbs the main thread.",
+    "placeholder": "What do you disagree with, or want to think through?",
+    "send": "Send",
+    "sending": "Sending…",
+    "startFailed": "Could not start the discussion: {reason}",
+    "sendFailed": "Could not send: {reason}",
+    "you": "You",
+    "assistant": "Assistant",
+    "waiting": "Replying…"
+  }
+}

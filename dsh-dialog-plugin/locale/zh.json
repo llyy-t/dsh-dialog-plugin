@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "title": "插话与侧边讨论",
+    "description": "输入框旁的插话按钮能把一句话直接塞进正在跑的这一轮；右侧常驻讨论栏独立开会话，专门聊分歧，不打扰主会话。"
+  },
+  "interject": {
+    "button": "插话（我还在干活时）",
+    "buttonIdle": "插话",
+    "title": "插一句话进当前回合",
+    "hint": "这条消息会在当前回合的下一个步骤边界被读到，不用等它跑完。",
+    "placeholder": "说说你的看法、纠正，或者要问的问题……",
+    "send": "插话",
+    "cancel": "取消",
+    "sent": "已插入。",
+    "sentQueued": "这一轮已经结束了，于是作为下一条消息发出。",
+    "empty": "先写点什么。",
+    "failed": "没能送达：{reason}"
+  },
+  "dialog": {
+    "tabTitle": "讨论",
+    "heading": "侧边讨论",
+    "empty": "用来聊清楚分歧的私人频道。它跑在自己的会话上，这里说的话不会动到主线。",
+    "placeholder": "你不同意哪里，或者想一起想清楚什么？",
+    "send": "发送",
+    "sending": "发送中……",
+    "startFailed": "没能发起讨论：{reason}",
+    "sendFailed": "没能发送：{reason}",
+    "you": "你",
+    "assistant": "助手",
+    "waiting": "正在回复……"
+  }
+}

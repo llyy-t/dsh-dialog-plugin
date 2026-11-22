@@ -1,0 +1,21 @@
+{
+  "name": "dsh-dialog-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "插话按钮 + 右侧讨论栏：在助手思考时插一句，或就分歧另开一个小窗聊",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": ["index.js", "client.js", "cordis.patch.yml", "locale/*.json", "icon.svg"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}

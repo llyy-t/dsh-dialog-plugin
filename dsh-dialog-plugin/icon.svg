@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" role="img" aria-label="Interject and side chat">
+  <path d="M7 9.5A2.5 2.5 0 0 1 9.5 7h13A2.5 2.5 0 0 1 25 9.5v8a2.5 2.5 0 0 1-2.5 2.5H13l-4.4 3.4A.9.9 0 0 1 7 22.6z" fill="#2f6fd0"/>
+  <path d="M9 21.5A2.5 2.5 0 0 1 11.5 19h14A2.5 2.5 0 0 1 28 21.5v7a2.5 2.5 0 0 1-2.5 2.5H17l-4.4 2.9A.9.9 0 0 1 11 33v-4.5h.5A2.5 2.5 0 0 1 9 26z" fill="#79a7e6"/>
+  <path d="M16 12.6h4.2M18.1 10.5v4.2" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round"/>
+  <circle cx="13.6" cy="24.6" r="1.25" fill="#ffffff"/>
+  <circle cx="18.1" cy="24.6" r="1.25" fill="#ffffff"/>
+  <circle cx="22.6" cy="24.6" r="1.25" fill="#ffffff"/>
+</svg>
