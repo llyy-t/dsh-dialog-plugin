@@ -50,7 +50,12 @@ DSH 自带的「工作步骤展示」只能控制折叠程度，看不到一句�
 
 取词优先级：工具自带的 `description`（最短最像人话） → 助手写的 `▶` 摘要行 → 工具名映射表 → 「正在思考…」。
 
+这一行默认打开，工具行里的 **「步骤提示」按钮** 可以随时关掉它；
+开关状态记在 `localStorage`（`dsh-dialog-plugin.activity`），刷新后保持。
+
 ![中文状态行](docs/activity-line.png)
+
+![步骤提示开关](docs/activity-switch.png)
 
 ---
 
