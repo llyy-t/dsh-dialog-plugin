@@ -33,8 +33,8 @@ window.__ModuleLoader__.load({
     const DICT = {
       zh: {
         button: '插话',
-        buttonBusy: '插话（进行中）',
         title: '插一句话进当前回合',
+        titleBusy: '这一轮正在跑，插话会在下一个步骤边界被读到',
         hint: '这条消息会在当前回合的下一个步骤边界被读到，不用等它跑完。',
         placeholder: '说说你的看法、纠正，或者要问的问题……',
         send: '插话',
@@ -60,10 +60,10 @@ window.__ModuleLoader__.load({
         panelResetHint: '丢掉这条支线，下次从最新进度重新分叉。',
         panelSidebarHint: '打开右侧栏能看到这条支线。',
         panelOpen: '旁路讨论',
-        panelOpenBusy: '旁路讨论（进行中）',
+        panelToggleHint: '在右侧栏继续这条支线。',
+        panelToggleHintBusy: '主对话正在跑，旁路讨论可以同时开一条支线。',
         panelForkFailed: '没能从当前对话分叉：{reason}',
         panelNeedSession: '还没有打开会话。',
-        panelToggleHint: '在右侧栏继续这条支线。',
         panelWaitTurn: '主对话这一轮还没跑完。等它结束后再点重试，支线才能从已完成的地方分叉。',
         panelRetry: '重试',
         activityThinking: '正在思考…',
@@ -75,8 +75,8 @@ window.__ModuleLoader__.load({
       },
       en: {
         button: 'Interject',
-        buttonBusy: 'Interject (busy)',
         title: 'Interject into the running turn',
+        titleBusy: 'A turn is running; this reaches it at the next step boundary',
         hint: 'This reaches the current turn at its next step — no need to wait for it to finish.',
         placeholder: 'A remark, a correction, or a question…',
         send: 'Interject',
@@ -102,10 +102,10 @@ window.__ModuleLoader__.load({
         panelResetHint: 'Drop this branch and fork again from the latest progress.',
         panelSidebarHint: 'Open the right sidebar to see this branch.',
         panelOpen: 'Side discussion',
-        panelOpenBusy: 'Side discussion (busy)',
         panelForkFailed: 'Could not fork the conversation: {reason}',
         panelNeedSession: 'No session is open.',
         panelToggleHint: 'Continue this branch in the right sidebar.',
+        panelToggleHintBusy: 'The main conversation is running; a side discussion can branch off alongside it.',
         panelWaitTurn: 'The main conversation has not finished a turn yet. Retry once it has, so the branch can fork from a completed point.',
         panelRetry: 'Retry',
         activityThinking: 'Thinking…',
@@ -129,6 +129,34 @@ window.__ModuleLoader__.load({
       const raw = table[key] ?? DICT.en[key] ?? key
       if (vars === undefined) return raw
       return raw.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match))
+    }
+
+    /**
+     * Render the two inline Markdown forms that show up in chat transcripts.
+     *
+     * A discussion bubble is a chat line, not a document: `**bold**` and
+     * `` `code` `` are the only markup worth honouring, and leaving the raw
+     * asterisks and backticks in place reads like corruption. Everything else
+     * stays literal, so a stray `*` cannot swallow the rest of the message.
+     *
+     * @param raw - one message body.
+     * @returns a node array ready for `React.createElement`.
+     */
+    function renderInline(raw) {
+      const source = typeof raw === 'string' ? raw : ''
+      const nodes = []
+      const pattern = /\*\*([^*]+)\*\*|`([^`]+)`/g
+      let cursor = 0
+      let match = pattern.exec(source)
+      while (match !== null) {
+        if (match.index > cursor) nodes.push(source.slice(cursor, match.index))
+        if (typeof match[1] === 'string') nodes.push(h('strong', { key: `b${match.index}` }, match[1]))
+        else nodes.push(h('code', { key: `c${match.index}` }, match[2]))
+        cursor = match.index + match[0].length
+        match = pattern.exec(source)
+      }
+      if (cursor < source.length) nodes.push(source.slice(cursor))
+      return nodes
     }
 
     /** Detect the language the shell is showing. */
@@ -653,13 +681,16 @@ window.__ModuleLoader__.load({
       const [on, setOn] = useActivityOn()
       // The control stays put in both states: hiding it while the line is off
       // would leave no way back on. Its label is the feature name; the lit
-      // `data-busy` style carries on/off, matching the two buttons beside it.
+      // `data-on` style carries on/off. It deliberately does NOT reuse the
+      // `data-busy` style the two buttons beside it use for a running turn:
+      // that one is a solid fill now, and a permanently filled switch would
+      // read as "something is happening" instead of "this is on".
       return h(
         'button',
         {
           type: 'button',
           className: 'dsh-dialog-interject-button',
-          'data-busy': on === true ? 'true' : 'false',
+          'data-on': on === true ? 'true' : 'false',
           title: text(language, on === true ? 'activityToggleOnHint' : 'activityToggleOffHint'),
           'aria-pressed': on === true ? 'true' : 'false',
           onClick: () => setOn(on !== true),
@@ -742,7 +773,9 @@ window.__ModuleLoader__.load({
 .dsh-dialog-interject-anchor{display:inline-flex;align-items:center}
 .dsh-dialog-interject-button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12.5px;line-height:1;cursor:pointer;opacity:.86}
 .dsh-dialog-interject-button:hover{opacity:1;background:var(--dsw-alias-bg-layer-2)}
-.dsh-dialog-interject-button[data-busy="true"]{color:var(--dsw-alias-brand-primary);border-color:currentColor}
+.dsh-dialog-interject-button[data-busy="true"]{opacity:1;color:#2f6fdd;border-color:color-mix(in srgb,#2f6fdd 58%,transparent);background:color-mix(in srgb,#2f6fdd 12%,transparent)}
+body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7aa9fd;border-color:color-mix(in srgb,#7aa9fd 58%,transparent);background:color-mix(in srgb,#7aa9fd 14%,transparent)}
+.dsh-dialog-interject-button[data-on="true"]{opacity:1;color:var(--dsw-alias-brand-primary);border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 55%,transparent)}
 .dsh-dialog-interject-button svg{display:block}
 .dsh-dialog-interject-popover{position:fixed;z-index:2147483000;box-sizing:border-box;width:${PANEL_WIDTH}px;padding:10px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);box-shadow:0 10px 30px rgba(0,0,0,.28);font:inherit;font-size:13px}
 .dsh-dialog-interject-head{display:flex;align-items:center;gap:8px;margin-bottom:2px}
@@ -770,10 +803,19 @@ window.__ModuleLoader__.load({
 .dsh-dialog-dialog-log{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:10px 12px;display:flex;flex-direction:column;gap:10px}
 .dsh-dialog-dialog-compose{flex:none;border-top:1px solid var(--dsw-alias-border-l1);padding:9px 10px;display:flex;flex-direction:column;gap:7px;background:var(--dsw-alias-bg-layer-1)}
 .dsh-dialog-dialog-empty{margin:auto;color:var(--dsw-alias-label-secondary);font-size:12.5px;text-align:center;line-height:1.6}
-.dsh-dialog-dialog-msg{display:flex;flex-direction:column;gap:3px;max-width:100%}
-.dsh-dialog-dialog-who{font-size:11px;letter-spacing:.02em;color:var(--dsw-alias-label-secondary)}
-.dsh-dialog-dialog-body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;padding:7px 9px;border-radius:9px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
-.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body{background:color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
+.dsh-dialog-dialog-msg{display:flex;flex-direction:row;align-items:flex-start;gap:8px;max-width:100%;flex:none}
+.dsh-dialog-dialog-msg[data-role="user"]{flex-direction:row-reverse}
+.dsh-dialog-dialog-avatar{flex:none;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;line-height:1;user-select:none;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-avatar{background:#95ec69;color:#111a0e;box-shadow:none}
+.dsh-dialog-dialog-body{position:relative;max-width:calc(100% - 76px);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;padding:8px 11px;border-radius:10px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l1)}
+.dsh-dialog-dialog-body::after{content:"";position:absolute;top:8px;width:0;height:0;border-top:5px solid transparent;border-bottom:5px solid transparent}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body{background:#95ec69;color:#111a0e;box-shadow:none;border-top-right-radius:3px}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body::after{right:-6px;border-left:6px solid #95ec69}
+.dsh-dialog-dialog-msg[data-role="assistant"] .dsh-dialog-dialog-body{border-top-left-radius:3px}
+.dsh-dialog-dialog-msg[data-role="assistant"] .dsh-dialog-dialog-body::after{left:-6px;border-right:6px solid var(--dsw-alias-bg-layer-2)}
+.dsh-dialog-dialog-body strong{font-weight:600}
+.dsh-dialog-dialog-body code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;padding:1px 4px;border-radius:4px;background:rgba(127,127,127,.18)}
+.dsh-dialog-dialog-msg[data-role="user"] .dsh-dialog-dialog-body code{background:rgba(0,0,0,.13)}
 .dsh-dialog-dialog-input{box-sizing:border-box;width:100%;min-height:62px;max-height:180px;resize:vertical;padding:8px 9px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:1.5}
 .dsh-dialog-dialog-input::placeholder{color:var(--dsw-alias-label-secondary);opacity:.72}
 .dsh-dialog-dialog-input:focus{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-1px}
@@ -951,7 +993,10 @@ window.__ModuleLoader__.load({
         }
       }, [sessions, sessionId, draft, language])
 
-      const label = running ? text(language, 'buttonBusy') : text(language, 'button')
+      // The label never changes with the turn: a "(busy)" suffix made the
+      // button resize under the cursor mid-sentence. The running state rides on
+      // colour alone (`data-busy`), and the title explains why it lit up.
+      const label = text(language, 'button')
 
       const trigger = h(
         'span',
@@ -962,7 +1007,7 @@ window.__ModuleLoader__.load({
             type: 'button',
             ref: buttonRef,
             className: 'dsh-dialog-interject-button',
-            title: text(language, 'title'),
+            title: text(language, running ? 'titleBusy' : 'title'),
             'aria-label': text(language, 'title'),
             'aria-expanded': open,
             'data-busy': running ? 'true' : 'false',
@@ -1119,11 +1164,13 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: 'dsh-dialog-interject-button',
           'data-busy': running ? 'true' : 'false',
-          title: error === undefined ? text(language, 'panelToggleHint') : error,
+          title: error === undefined
+            ? text(language, running ? 'panelToggleHintBusy' : 'panelToggleHint')
+            : error,
           onClick: reveal,
         },
         h(DiscussionIcon, null),
-        h('span', null, text(language, error === undefined ? (running ? 'panelOpenBusy' : 'panelOpen') : 'panelForkFailed', error === undefined ? undefined : { reason: error }))
+        h('span', null, text(language, error === undefined ? 'panelOpen' : 'panelForkFailed', error === undefined ? undefined : { reason: error }))
       )
     }
 
@@ -1556,10 +1603,14 @@ window.__ModuleLoader__.load({
           { key: `${index}-${message.role}`, className: 'dsh-dialog-dialog-msg', 'data-role': message.role },
           h(
             'div',
-            { className: 'dsh-dialog-dialog-who' },
-            text(language, message.role === 'user' ? 'panelYou' : 'panelAgent')
+            {
+              className: 'dsh-dialog-dialog-avatar',
+              title: text(language, message.role === 'user' ? 'panelYou' : 'panelAgent'),
+              'aria-hidden': 'true',
+            },
+            text(language, message.role === 'user' ? 'panelYou' : 'panelAgent').slice(0, 1)
           ),
-          h('div', { className: 'dsh-dialog-dialog-body' }, message.text)
+          h('div', { className: 'dsh-dialog-dialog-body' }, renderInline(message.text))
         )
       )
       if (running) {
@@ -1567,7 +1618,11 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { key: 'running', className: 'dsh-dialog-dialog-msg', 'data-role': 'assistant' },
-            h('div', { className: 'dsh-dialog-dialog-who' }, text(language, 'panelAgent')),
+            h(
+              'div',
+              { className: 'dsh-dialog-dialog-avatar', title: text(language, 'panelAgent'), 'aria-hidden': 'true' },
+              text(language, 'panelAgent').slice(0, 1)
+            ),
             h('div', { className: 'dsh-dialog-dialog-body' }, text(language, 'panelWait'))
           )
         )

@@ -70,26 +70,26 @@ Host 半边**不参与投递**。投递走的是 Session Controller 自己的 `p
 
 | 位置 | 内容 |
 |---|---|
-| `L219` | `sessionFace(sessions, sessionId)` — 拿真正的 `SessionFace` |
-| `L254` | `deliverToSession(sessions, sessionId, body, mode = 'steer')` — 唯一投递入口 |
-| `L401` | `activityLine(name, argumentsRaw)` — 工具调用 → 一句中文 |
-| `L474` | `describeActivity(entries)` — 从事件窗口算出当前这一步 |
-| `L534` | `useActivity(sessions, sessionId)` — 订阅事件窗口（只认 `revision` 变化） |
-| `L590` | `ActivityLine` — 输入框上方那行状态（关闭时 `return null`） |
-| `L651` | `ActivityToggle` — 工具行里的「步骤提示」开关 |
-| `L677` | `const ACTIVITY_KEY = 'dsh-dialog-plugin.activity'` — 开关状态 |
-| `L713` | `useActivityOn()` — 读开关 + 订阅广播 |
-| `L741` | `const PANEL_CSS` — 全部样式，用 `--dsw-alias-*` token |
-| `L796` | `ensureStyles()` — 注入/刷新 `<style id="dsh-dialog-plugin-styles">`（内容不一致就覆写） |
-| `L856` | `InterjectButton` — 插话按钮 + 浮层（头部带 `×` 关闭键） |
-| `L1070` | `const TAB_KIND = 'dialog-branch'` |
-| `L1081` | `SideDiscussionButton` — 打开右栏 tab |
-| `L1132` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
-| `L1135` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
-| `L1148` / `L1167` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
-| `L1303` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
-| `L1391` | `SideDiscussionTab` — 右栏 body |
-| `L1661` | `apply(ctx)` — 全部注册都在这里（状态行 `L1774`，开关 `L1787`） |
+| `L247` | `sessionFace(sessions, sessionId)` — 拿真正的 `SessionFace` |
+| `L282` | `deliverToSession(sessions, sessionId, body, mode = 'steer')` — 唯一投递入口 |
+| `L429` | `activityLine(name, argumentsRaw)` — 工具调用 → 一句中文 |
+| `L502` | `describeActivity(entries)` — 从事件窗口算出当前这一步 |
+| `L562` | `useActivity(sessions, sessionId)` — 订阅事件窗口（只认 `revision` 变化） |
+| `L618` | `ActivityLine` — 输入框上方那行状态（关闭时 `return null`） |
+| `L679` | `ActivityToggle` — 工具行里的「步骤提示」开关 |
+| `L708` | `const ACTIVITY_KEY = 'dsh-dialog-plugin.activity'` — 开关状态 |
+| `L744` | `useActivityOn()` — 读开关 + 订阅广播 |
+| `L772` | `const PANEL_CSS` — 全部样式，用 `--dsw-alias-*` token |
+| `L838` | `ensureStyles()` — 注入/刷新 `<style id="dsh-dialog-plugin-styles">`（内容不一致就覆写） |
+| `L898` | `InterjectButton` — 插话按钮 + 浮层（头部带 `×` 关闭键） |
+| `L1115` | `const TAB_KIND = 'dialog-branch'` |
+| `L1126` | `SideDiscussionButton` — 打开右栏 tab |
+| `L1179` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
+| `L1182` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
+| `L1195` / `L1214` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
+| `L1350` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
+| `L1438` | `SideDiscussionTab` — 右栏 body |
+| `L1716` | `apply(ctx)` — 全部注册都在这里（插话 `L1755`、旁路讨论 `L1815`、状态行 `L1829`、开关 `L1842`） |
 
 **投递链路**（两个功能共用）：
 
@@ -99,12 +99,12 @@ Host 半边**不参与投递**。投递走的是 Session Controller 自己的 `p
      → face.prompt([{type:'text',text}], mode)
 ```
 
-`sessionFace` 的实现要点（`client.js:211`）：`sessions.binding(id)` 有就直接用；
+`sessionFace` 的实现要点（`client.js:247`）：`sessions.binding(id)` 有就直接用；
 没有就 `sessions.retain(id, {source:'gateway'})` 借一个，读出 `binding.session`，
 然后**延迟 15 秒才 release**（`setTimeout(release, 15000)`）——
 因为调用方可能还要 await 一次 prompt，立刻释放会让 face 失效。
 
-`deliverToSession` 的降级策略（`client.js:246`）：`steer` 失败自动重试 `queue`，
+`deliverToSession` 的降级策略（`client.js:282`）：`steer` 失败自动重试 `queue`，
 确保文本不会因为「回合刚好结束」而静默丢失。
 
 ### 右栏 tab 的注册（踩过坑的地方）
@@ -133,6 +133,40 @@ ctx.slots.inject('sidebar.right.pane.tab', () =>
    第二次 `register` 同 id 会抛 `is already registered`。
    早期没有 catch 时，这个异常把 `document.title` 污染成
    `DIALOG-REG-FAIL …already registered`，还把自动化点击脚本搞坏了（按标题找窗口找不到）。
+
+### 工具行三颗按钮：运行状态只用颜色表达
+
+三颗按钮（「步骤提示」30 / 「插话」40 / 「旁路讨论」50）共用 `.dsh-dialog-interject-button`
+一个类，但**「开着」和「回合正在跑」是两种不同的状态，用两个不同的属性**：
+
+| 属性 | 谁用 | 含义 | 样式 |
+|---|---|---|---|
+| `data-on="true"` | 步骤提示开关 | 这个选项是开着的 | 品牌色描边，无填充 |
+| `data-busy="true"` | 插话、旁路讨论 | 主对话正在跑，现在点它是有意义的 | 蓝色描边 + 12% 蓝色 tint |
+
+早期两颗按钮在运行时会变成「插话（进行中）」这种带括号后缀的文案，问题是
+**按钮宽度会在鼠标悬停时跳变**，正好落在人准备点的那一下。现在文案固定，
+运行态只靠颜色。
+
+**颜色选的是写死的蓝色，不是主题 token。** 原因：`--dsw-alias-brand-primary`
+在暗色主题下实测就是 `#f9fafb`（那是**前景色**，不是强调色），
+拿它做「变色」的标记等于没变。DSH 自己在发送按钮上用的那种蓝
+（采样到的值在 `#5d7cb2` ~ `#7aa9fd` 区间）在 token 清单里没有对应变量，
+所以这里用两档硬编码色 + `body[data-ds-dark-theme]` 区分：
+
+```css
+.dsh-dialog-interject-button[data-busy="true"]{color:#2f6fdd;border-color:color-mix(in srgb,#2f6fdd 58%,transparent);background:color-mix(in srgb,#2f6fdd 12%,transparent)}
+body[data-ds-dark-theme] .dsh-dialog-interject-button[data-busy="true"]{color:#7aa9fd;border-color:color-mix(in srgb,#7aa9fd 58%,transparent);background:color-mix(in srgb,#7aa9fd 14%,transparent)}
+```
+
+（试过实心填充 `background: var(--dsw-alias-brand-primary)` —— 暗色下就是一块白板，
+在深色工具行里过于刺眼，已弃用。）
+
+下图是回合运行中的真实状态：左边「步骤提示」只是开着（描边），
+中间两颗「插话」「旁路讨论」是 `data-busy` 的蓝色 tint。三种状态一眼能分开，
+没有出现「（进行中）」字样，按钮宽度也不随状态变化：
+
+![运行态只用颜色](busy-colour.png)
 
 ### 中文状态行（Activity）：把「这一步在干什么」显示在输入框上方
 
@@ -194,8 +228,9 @@ source.subscribe(read) + setInterval(read, 900)  // 丢帧兜底
   「显示什么」然后「能做什么」。
 - 状态存在 `localStorage` 的 `dsh-dialog-plugin.activity`：值为 `'off'` 表示关闭，
   **键不存在表示打开**（默认开，不然首次使用会看到一片空白，不知道有这个功能）。
-- 打开时按钮用 `data-busy="true"`（品牌色描边）表示「正在显示」，关闭时回到普通描边。
-  这个视觉约定与旁边两颗按钮一致，没有再引入新样式。
+- 打开时按钮用 `data-on="true"`（品牌色描边）表示「正在显示」，关闭时回到普通描边。
+  **这个开关刻意不复用旁边两颗按钮的 `data-busy`**：`data-busy` 现在是一块实心填充，
+  一颗常亮的实心按钮会被读成「正在发生什么」，而不是「这个选项是开的」。
 - 两处都读同一个 `useActivityOn()` hook，内部用 `Set` 订阅广播，
   所以点按钮和状态行之间是即时同步的，不需要刷新。
 - 关闭时 `ActivityLine` 直接 `return null`，但 `useActivity` 仍然订阅
@@ -641,10 +676,11 @@ $sb.ToString()
 勿当作基准；真正的回滚基线由 `rollback.ps1` 每次写前自动备份到
 `C:\Users\30823\.dsh\profiles\desktop\rollback-backup\`）。
 
-最后状态（2026-11-22 15:00）：`client.js` 77779 字节 / 1799 行，`node --check` exit=0，
+最后状态（2026-11-22 15:26）：`client.js` 81768 字节 / 1854 行，`node --check` exit=0，
 插话浮层与右栏都只剩真实按钮，中文状态行已上界面并带「步骤提示」开关
 （开关状态存 `localStorage` 的 `dsh-dialog-plugin.activity`，刷新后保持），
-全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL` 零命中。
+运行态文案后缀已去掉、只靠颜色（`data-busy` 蓝色描边 + tint），
+全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL|进行中` 零命中。
 
 恢复基线：`D:\WB\dsh-dialog-plugin\backup\client.js.before-activity`
 （56822 字节，即加状态行之前的版本），要退掉状态行直接覆盖回去再 F5。
