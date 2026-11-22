@@ -69,6 +69,9 @@ window.__ModuleLoader__.load({
         activityThinking: '正在思考…',
         activityNow: '\u6b63\u5728{what}',
         activityDone: '刚做完：{what}',
+        activityToggle: '步骤提示',
+        activityToggleOnHint: '输入框上方那一行中文正在显示。点一下可以关掉。',
+        activityToggleOffHint: '输入框上方那一行中文已关闭。点一下重新打开。',
       },
       en: {
         button: 'Interject',
@@ -108,6 +111,9 @@ window.__ModuleLoader__.load({
         activityThinking: 'Thinking…',
         activityNow: '{what}',
         activityDone: 'Just finished: {what}',
+        activityToggle: 'Step line',
+        activityToggleOnHint: 'The plain-language line above the box is showing. Click to hide it.',
+        activityToggleOffHint: 'The plain-language line above the box is hidden. Click to show it.',
       },
     }
 
@@ -585,8 +591,13 @@ window.__ModuleLoader__.load({
       const { sessionId, useSession } = props
       const sessions = useSessionsService()
       const running = useSnapshotRunning(useSession)
+      const [on] = useActivityOn()
       const activity = useActivity(sessions, sessionId)
       const language = detectLanguage()
+
+      // A hidden line still subscribes (so turning it back on is instant), but
+      // it does not take part in the layout.
+      if (on !== true) return null
 
       let tone = 'idle'
       let label = ''
@@ -614,6 +625,101 @@ window.__ModuleLoader__.load({
         h('span', { className: 'dsh-dialog-activity-dot', 'aria-hidden': true }),
         h('span', { className: 'dsh-dialog-activity-text' }, label)
       )
+    }
+
+    /** The status glyph: three stacked lines, the last one short. */
+    function ActivityIcon() {
+      return h(
+        'svg',
+        { viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': true, focusable: 'false' },
+        h('path', {
+          d: 'M2.4 4h11.2M2.4 8h8.4M2.4 12h5.2',
+          fill: 'none',
+          stroke: 'currentColor',
+          'stroke-width': 1.4,
+          'stroke-linecap': 'round',
+        })
+      )
+    }
+
+    /**
+     * Composer tool-row switch for the ambient status line.
+     *
+     * The line is on unless the reader turned it off, so the control reports the
+     * current state instead of implying a one-shot action.
+     */
+    function ActivityToggle() {
+      const language = detectLanguage()
+      const [on, setOn] = useActivityOn()
+      // The control stays put in both states: hiding it while the line is off
+      // would leave no way back on. Its label is the feature name; the lit
+      // `data-busy` style carries on/off, matching the two buttons beside it.
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'dsh-dialog-interject-button',
+          'data-busy': on === true ? 'true' : 'false',
+          title: text(language, on === true ? 'activityToggleOnHint' : 'activityToggleOffHint'),
+          'aria-pressed': on === true ? 'true' : 'false',
+          onClick: () => setOn(on !== true),
+        },
+        h(ActivityIcon, null),
+        h('span', null, text(language, 'activityToggle'))
+      )
+    }
+
+    //#endregion
+
+    //#region Activity switch — the line is on by default and can be turned off
+
+    /** localStorage key holding `"off"` once the reader hides the line. */
+    const ACTIVITY_KEY = 'dsh-dialog-plugin.activity'
+
+    /** Subscribers to the switch; both faces read it so they never disagree. */
+    const activityListeners = new Set()
+
+    /**
+     * Whether the ambient status line is shown.
+     *
+     * An absent record means on: the line is the point of the feature, so a
+     * first run shows it instead of greeting the reader with nothing.
+     */
+    function readActivityOn() {
+      try {
+        return globalThis.localStorage?.getItem(ACTIVITY_KEY) !== 'off'
+      } catch {
+        return true
+      }
+    }
+
+    /** Remember the switch and wake every subscriber. */
+    function setActivityOn(on) {
+      try {
+        if (on) globalThis.localStorage?.removeItem(ACTIVITY_KEY)
+        else globalThis.localStorage?.setItem(ACTIVITY_KEY, 'off')
+      } catch {}
+      for (const listener of [...activityListeners]) {
+        try {
+          listener()
+        } catch {}
+      }
+    }
+
+    /**
+     * Follow the switch from a component.
+     * @returns the current value and the setter, as `[on, setActivityOn]`.
+     */
+    function useActivityOn() {
+      const [on, setOn] = useState(readActivityOn)
+      useEffect(() => {
+        const read = () => setOn(readActivityOn())
+        activityListeners.add(read)
+        return () => {
+          activityListeners.delete(read)
+        }
+      }, [])
+      return [on, setActivityOn]
     }
 
     //#endregion
@@ -1670,7 +1776,21 @@ window.__ModuleLoader__.load({
           },
           withServices(ActivityLine)
         )
-      )    }
+      )
+
+      // Its switch lives in the tool row next to the other two controls, before
+      // them so the row still reads "what I can do" then "what I send".
+      ctx.slots.inject('conversation.input.right', () =>
+        ctx.slots.register(
+          {
+            name: 'conversation.input.right',
+            id: 'dsh-dialog-activity-switch',
+            order: 30,
+          },
+          withServices(ActivityToggle)
+        )
+      )
+    }
 
     return { inject, apply }
 

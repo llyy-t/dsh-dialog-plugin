@@ -23,7 +23,8 @@
 
 此外还有第三件小事（与上面两者也无关）：**中文状态行** —— 在输入框上方
 显示一句「这一步在干什么」，解决「思考时看不见进度」。
-它只读会话事件，不投递任何消息，见第二节末尾。
+它只读会话事件，不投递任何消息，见第二节末尾。工具行里的「步骤提示」按钮
+可以随时把它关掉/打开，状态记在 `localStorage`，刷新后保持。
 
 ---
 
@@ -36,7 +37,7 @@ dsh-dialog-plugin/
 ├── package.json          声明 dsh.bundle.patch 与 dsh.client（web, immediately）
 ├── cordis.patch.yml      只 insert 一行 `- id: dsh-dialog-plugin`
 ├── index.js              Host 半边：把 Agent inbox 事件写进日志（104 行）
-├── client.js             全部 UI（1680 行、约 72.5 KB，单文件）
+├── client.js             全部 UI（1799 行、约 76 KB，单文件）
 ├── icon.svg
 └── locale/{zh,en}.json   文案
 ```
@@ -69,23 +70,26 @@ Host 半边**不参与投递**。投递走的是 Session Controller 自己的 `p
 
 | 位置 | 内容 |
 |---|---|
-| `L213` | `sessionFace(sessions, sessionId)` — 拿真正的 `SessionFace` |
-| `L248` | `deliverToSession(sessions, sessionId, body, mode = 'steer')` — 唯一投递入口 |
-| `L395` | `activityLine(name, argumentsRaw)` — 工具调用 → 一句中文 |
-| `L468` | `describeActivity(entries)` — 从事件窗口算出当前这一步 |
-| `L528` | `useActivity(sessions, sessionId)` — 订阅事件窗口（只认 `revision` 变化） |
-| `L584` | `ActivityLine` — 输入框上方那行状态 |
-| `L635` | `const PANEL_CSS` — 全部样式，用 `--dsw-alias-*` token |
-| `L690` | `ensureStyles()` — 注入/刷新 `<style id="dsh-dialog-plugin-styles">`（内容不一致就覆写） |
-| `L750` | `InterjectButton` — 插话按钮 + 浮层（头部带 `×` 关闭键） |
-| `L964` | `const TAB_KIND = 'dialog-branch'` |
-| `L975` | `SideDiscussionButton` — 打开右栏 tab |
-| `L1026` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
-| `L1029` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
-| `L1042` / `L1061` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
-| `L1197` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
-| `L1285` | `SideDiscussionTab` — 右栏 body |
-| `L1555` | `apply(ctx)` — 全部注册都在这里（状态行在 `L1664` 注册） |
+| `L219` | `sessionFace(sessions, sessionId)` — 拿真正的 `SessionFace` |
+| `L254` | `deliverToSession(sessions, sessionId, body, mode = 'steer')` — 唯一投递入口 |
+| `L401` | `activityLine(name, argumentsRaw)` — 工具调用 → 一句中文 |
+| `L474` | `describeActivity(entries)` — 从事件窗口算出当前这一步 |
+| `L534` | `useActivity(sessions, sessionId)` — 订阅事件窗口（只认 `revision` 变化） |
+| `L590` | `ActivityLine` — 输入框上方那行状态（关闭时 `return null`） |
+| `L651` | `ActivityToggle` — 工具行里的「步骤提示」开关 |
+| `L677` | `const ACTIVITY_KEY = 'dsh-dialog-plugin.activity'` — 开关状态 |
+| `L713` | `useActivityOn()` — 读开关 + 订阅广播 |
+| `L741` | `const PANEL_CSS` — 全部样式，用 `--dsw-alias-*` token |
+| `L796` | `ensureStyles()` — 注入/刷新 `<style id="dsh-dialog-plugin-styles">`（内容不一致就覆写） |
+| `L856` | `InterjectButton` — 插话按钮 + 浮层（头部带 `×` 关闭键） |
+| `L1070` | `const TAB_KIND = 'dialog-branch'` |
+| `L1081` | `SideDiscussionButton` — 打开右栏 tab |
+| `L1132` | `const TAB_ID = 'dsh-dialog-plugin/branch'` |
+| `L1135` | `const BRANCH_KEY_PREFIX = 'dsh-dialog-plugin.branch.'` |
+| `L1148` / `L1167` | `readBranch` / `writeBranch` — 每个父会话记住自己的子会话 id |
+| `L1303` | `useBranchLog(sessions, sessionId, fromSeq)` — 把子会话事件流变成消息列表 |
+| `L1391` | `SideDiscussionTab` — 右栏 body |
+| `L1661` | `apply(ctx)` — 全部注册都在这里（状态行 `L1774`，开关 `L1787`） |
 
 **投递链路**（两个功能共用）：
 
@@ -182,6 +186,29 @@ source.subscribe(read) + setInterval(read, 900)  // 丢帧兜底
 这张图里显示的是 `Capture final activity line screenshot for docs` ——
 工具自带的 `description` 被原样发布，没有套「正在执行命令」这种外壳，
 这就是为了让句子短、能一眼看完。
+
+**开关**：这一行默认打开，工具行里有一颗「步骤提示」按钮可以关掉它。
+
+- 位置：`conversation.input.right`，`id: 'dsh-dialog-activity-switch'`，`order: 30`
+  —— 排在「插话」(40)、「旁路讨论」(50) 之前，所以工具行读起来是
+  「显示什么」然后「能做什么」。
+- 状态存在 `localStorage` 的 `dsh-dialog-plugin.activity`：值为 `'off'` 表示关闭，
+  **键不存在表示打开**（默认开，不然首次使用会看到一片空白，不知道有这个功能）。
+- 打开时按钮用 `data-busy="true"`（品牌色描边）表示「正在显示」，关闭时回到普通描边。
+  这个视觉约定与旁边两颗按钮一致，没有再引入新样式。
+- 两处都读同一个 `useActivityOn()` hook，内部用 `Set` 订阅广播，
+  所以点按钮和状态行之间是即时同步的，不需要刷新。
+- 关闭时 `ActivityLine` 直接 `return null`，但 `useActivity` 仍然订阅
+  （hook 在 return 之前调用），因此重新打开是瞬时的，不会闪一下「正在思考…」。
+
+验证过的四种状态（截图在会话记录里）：
+
+| 操作 | 结果 |
+| --- | --- |
+| 默认加载 | 输入框上方出现 `● 说明文字`，「步骤提示」按钮高亮 |
+| 点一下按钮 | 该行消失，按钮变暗，tooltip 变「已关闭，点一下重新打开」 |
+| 再点一下 | 该行立刻回来，tooltip 变「正在显示，点一下可以关掉」 |
+| 关闭后按 F5 | 仍然是关闭状态（localStorage 生效），按钮仍在原位可点 |
 
 ---
 
@@ -609,9 +636,13 @@ $sb.ToString()
 勿当作基准；真正的回滚基线由 `rollback.ps1` 每次写前自动备份到
 `C:\Users\30823\.dsh\profiles\desktop\rollback-backup\`）。
 
-最后状态（2026-11-21 20:42）：`client.js` 72549 字节 / 1680 行，`node --check` exit=0，
-插话浮层与右栏都只剩真实按钮，中文状态行已上界面，
+最后状态（2026-11-22 15:00）：`client.js` 77779 字节 / 1799 行，`node --check` exit=0，
+插话浮层与右栏都只剩真实按钮，中文状态行已上界面并带「步骤提示」开关
+（开关状态存 `localStorage` 的 `dsh-dialog-plugin.activity`，刷新后保持），
 全项目 grep `selftest|自测|sendProbe|PROBE|TEMPORARY|dsh-color|DIALOG-REG-FAIL` 零命中。
 
 恢复基线：`D:\WB\dsh-dialog-plugin\backup\client.js.before-activity`
 （56822 字节，即加状态行之前的版本），要退掉状态行直接覆盖回去再 F5。
+只退开关、保留状态行：删掉 `apply()` 里 `id: 'dsh-dialog-activity-switch'` 那次
+`ctx.slots.register`，并把 `ActivityLine` 第一行的 `const [on] = useActivityOn()`
+与 `if (on !== true) return null` 一并去掉。
